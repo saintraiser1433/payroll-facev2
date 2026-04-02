@@ -1,0 +1,352 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String    @id @default(cuid())
+  email     String    @unique
+  password  String
+  role      Role      @default(EMPLOYEE)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  employee  Employee?
+
+  @@map("users")
+}
+
+model Department {
+  id          String     @id @default(cuid())
+  name        String     @unique
+  description String?
+  headId      String?    @unique
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  head        Employee?  @relation("DepartmentHead", fields: [headId], references: [id])
+  employees   Employee[]
+  positionSalaries PositionSalary[]
+
+  @@map("departments")
+}
+
+model Schedule {
+  id          String     @id @default(cuid())
+  name        String
+  timeIn      String
+  timeOut     String
+  workingDays String
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  employees   Employee[]
+
+  @@map("schedules")
+}
+
+model SalaryGrade {
+  id          String     @id @default(cuid())
+  grade       String     @unique
+  description String?
+  salaryRate  Float
+  isActive    Boolean    @default(true)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  employees   Employee[]
+
+  @@map("salary_grades")
+}
+
+// Salary rate table keyed directly by employee position.
+// Payroll uses this instead of SalaryGrade.
+model PositionSalary {
+  id          String    @id @default(cuid())
+  position    String    @unique
+  description String?
+  salaryRate  Float
+  departmentId String?
+  department  Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("position_salaries")
+}
+
+model Employee {
+  id                String            @id @default(cuid())
+  employeeId        String            @unique
+  firstName         String
+  lastName          String
+  email             String            @unique
+  phone             String?
+  address           String?
+  position          String
+  salaryGradeId     String?
+  salaryType        String            @default("MONTHLY")
+  hireDate          DateTime
+  profileImage      String?
+  qrCode            String?
+  isActive          Boolean           @default(true)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  userId            String?           @unique
+  departmentId      String?
+  scheduleId        String?
+  jobDescription    String?
+  attendances       Attendance[]
+  cashAdvances      CashAdvance[]     @relation("CashAdvanceEmployee")
+  cashAdvanceApprovals CashAdvance[]  @relation("CashAdvanceApprovals")
+  overtimeRequests  OvertimeRequest[] @relation("OvertimeRequestEmployee")
+  overtimeApprovals OvertimeRequest[] @relation("OvertimeRequestApprovals")
+  leaveRequests     LeaveRequest[]    @relation("LeaveRequestEmployee")
+  leaveApprovals    LeaveRequest[]   @relation("LeaveRequestApprovals")
+  managedDepartment Department?       @relation("DepartmentHead")
+  employeeBenefits  EmployeeBenefit[]
+  schedule          Schedule?         @relation(fields: [scheduleId], references: [id])
+  department        Department?       @relation(fields: [departmentId], references: [id])
+  salaryGrade       SalaryGrade?      @relation(fields: [salaryGradeId], references: [id])
+  user              User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payrollItems      PayrollItem[]
+  faceSamples       EmployeeFace[]
+
+  @@map("employees")
+}
+
+model EmployeeFace {
+  id         String   @id @default(cuid())
+  employeeId String
+  slot       Int
+  imagePath  String
+  createdAt  DateTime @default(now())
+
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, slot])
+  @@map("employee_faces")
+}
+
+model Attendance {
+  id               String           @id @default(cuid())
+  date             DateTime
+  timeIn           DateTime?
+  timeOut          DateTime?
+  breakOut         DateTime?
+  breakIn          DateTime?
+  status           AttendanceStatus @default(PRESENT)
+  lateMinutes      Int              @default(0)
+  overtimeMinutes  Int              @default(0)
+  undertimeMinutes Int              @default(0)
+  breakMinutes     Int              @default(0)
+  notes            String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  employeeId       String
+  employee         Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, date])
+  @@map("attendances")
+}
+
+model PayrollPeriod {
+  id                String        @id @default(cuid())
+  name              String
+  startDate         DateTime
+  endDate           DateTime
+  status            PayrollStatus @default(DRAFT)
+  deductionsEnabled Boolean       @default(true)
+  isThirteenthMonth Boolean       @default(false)
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  payrollItems      PayrollItem[]
+
+  @@map("payroll_periods")
+}
+
+model PayrollItem {
+  id                String             @id @default(cuid())
+  basicPay          Float              @default(0)
+  overtimePay       Float              @default(0)
+  holidayPay        Float              @default(0)
+  thirteenthMonthPay Float             @default(0)
+  totalEarnings     Float              @default(0)
+  totalDeductions   Float              @default(0)
+  netPay            Float              @default(0)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  employeeId        String
+  payrollPeriodId   String
+  deductions        PayrollDeduction[]
+  payrollPeriod     PayrollPeriod      @relation(fields: [payrollPeriodId], references: [id], onDelete: Cascade)
+  employee          Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, payrollPeriodId])
+  @@map("payroll_items")
+}
+
+model DeductionType {
+  id                String             @id @default(cuid())
+  name              String             @unique
+  description       String?
+  isFixed           Boolean            @default(false)
+  amount            Float?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  payrollDeductions PayrollDeduction[]
+
+  @@map("deduction_types")
+}
+
+model PayrollDeduction {
+  id              String        @id @default(cuid())
+  amount          Float
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  payrollItemId   String
+  deductionTypeId String
+  deductionType   DeductionType @relation(fields: [deductionTypeId], references: [id])
+  payrollItem     PayrollItem   @relation(fields: [payrollItemId], references: [id], onDelete: Cascade)
+
+  @@map("payroll_deductions")
+}
+
+model CashAdvance {
+  id         String   @id @default(cuid())
+  amount     Float
+  reason     String?
+  dateIssued DateTime
+  isPaid     Boolean  @default(false)
+  status     RequestStatus @default(PENDING)
+  approvedAt DateTime?
+  approvedById String?
+  approvedBy Employee? @relation("CashAdvanceApprovals", fields: [approvedById], references: [id])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  employeeId String
+  employee   Employee @relation("CashAdvanceEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@map("cash_advances")
+}
+
+model OvertimeRequest {
+  id                 String         @id @default(cuid())
+  employeeId         String
+  employee           Employee       @relation("OvertimeRequestEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  requestDate        DateTime
+  requestedMinutes   Int
+  reason             String?
+  status             RequestStatus  @default(PENDING)
+  approvedMinutes    Int            @default(0)
+  approvedAt         DateTime?
+  approvedById       String?
+  approvedBy         Employee?      @relation("OvertimeRequestApprovals", fields: [approvedById], references: [id])
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@map("overtime_requests")
+}
+
+model LeaveRequest {
+  id                 String         @id @default(cuid())
+  employeeId         String
+  employee           Employee       @relation("LeaveRequestEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  startDate          DateTime
+  endDate            DateTime
+  reason             String?
+  attachmentPath     String?
+  status             RequestStatus  @default(PENDING)
+  approvedAt         DateTime?
+  approvedById       String?
+  approvedBy         Employee?      @relation("LeaveRequestApprovals", fields: [approvedById], references: [id])
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  @@map("leave_requests")
+}
+
+model Benefit {
+  id                   String            @id @default(cuid())
+  name                 String
+  description          String?
+  type                 BenefitType
+  coverageAmount       Float
+  employeeContribution Float
+  employerContribution Float
+  isActive             Boolean           @default(true)
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+  employeeBenefits     EmployeeBenefit[]
+
+  @@map("benefits")
+}
+
+model EmployeeBenefit {
+  id         String    @id @default(cuid())
+  startDate  DateTime  @default(now())
+  endDate    DateTime?
+  isActive   Boolean   @default(true)
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  employeeId String
+  benefitId  String
+  benefit    Benefit   @relation(fields: [benefitId], references: [id], onDelete: Cascade)
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, benefitId])
+  @@map("employee_benefits")
+}
+
+enum Role {
+  ADMIN
+  DEPARTMENT_HEAD
+  EMPLOYEE
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  ABSENT
+  OVERTIME
+}
+
+enum PayrollStatus {
+  DRAFT
+  CLOSED
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum BenefitType {
+  HEALTH
+  DENTAL
+  VISION
+  LIFE
+  DISABILITY
+  RETIREMENT
+  OTHER
+}
+
+model Holiday {
+  id          String      @id @default(cuid())
+  name        String
+  date        DateTime
+  type        HolidayType
+  payRate     Float       @default(2.0) // 2.0 = double pay, 1.5 = 1.5x pay, etc.
+  description String?
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@map("holidays")
+}
+
+enum HolidayType {
+  REGULAR
+  SPECIAL
+}
