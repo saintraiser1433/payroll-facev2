@@ -206,6 +206,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Only one open (DRAFT) regular period at a time
+    if (!validatedData.isThirteenthMonth) {
+      const openDraft = await prisma.payrollPeriod.findFirst({
+        where: { status: 'DRAFT', isThirteenthMonth: false },
+      })
+      if (openDraft) {
+        return NextResponse.json(
+          {
+            error:
+              'There is already an open payroll period. Close it before creating another regular period.',
+          },
+          { status: 400 },
+        )
+      }
+    }
+
     // Check for overlapping periods - Skip this check for 13th month pay periods
     // 13th month pay can overlap with any other periods (including other 13th month periods)
     if (!validatedData.isThirteenthMonth) {

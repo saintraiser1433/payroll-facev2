@@ -4,6 +4,13 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+function formatScheduleSnapshot(
+  schedule: { timeIn: string; timeOut: string } | null | undefined
+): string | null {
+  if (!schedule?.timeIn || !schedule?.timeOut) return null
+  return `${schedule.timeIn} – ${schedule.timeOut}`
+}
+
 const attendanceSchema = z.object({
   employeeId: z.string().min(1, 'Employee ID is required'),
   date: z.string().transform((str) => new Date(str)),
@@ -83,7 +90,14 @@ export async function GET(request: NextRequest) {
               position: true,
               department: {
                 select: { name: true }
-              }
+              },
+              schedule: {
+                select: { timeIn: true, timeOut: true, name: true },
+              },
+              faceSamples: {
+                where: { slot: 1 },
+                select: { imagePath: true, slot: true },
+              },
             }
           }
         },
@@ -203,13 +217,31 @@ export async function POST(request: NextRequest) {
           console.log('No schedule found for employee, defaulting to PRESENT')
         }
 
+        const newScheduleTime = formatScheduleSnapshot(employee?.schedule ?? undefined)
+        let oldScheduleTime: string | null = null
+        if (newScheduleTime) {
+          const prevAttendance = await prisma.attendance.findFirst({
+            where: {
+              employeeId,
+              date: { lt: today },
+            },
+            orderBy: { date: 'desc' },
+            select: { newScheduleTime: true },
+          })
+          oldScheduleTime = prevAttendance?.newScheduleTime ?? null
+        }
+
         if (attendance) {
           attendance = await prisma.attendance.update({
             where: { id: attendance.id },
             data: {
               timeIn: clockTime,
               status: status as any,
-              lateMinutes
+              lateMinutes,
+              ...(newScheduleTime != null && {
+                newScheduleTime,
+                oldScheduleTime,
+              }),
             }
           })
         } else {
@@ -219,7 +251,9 @@ export async function POST(request: NextRequest) {
               date: today,
               timeIn: clockTime,
               status: status as any,
-              lateMinutes
+              lateMinutes,
+              newScheduleTime: newScheduleTime ?? undefined,
+              oldScheduleTime: oldScheduleTime ?? undefined,
             }
           })
         }

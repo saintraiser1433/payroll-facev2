@@ -94,7 +94,11 @@ export async function GET(request: NextRequest) {
           salaryGrade: true,
           user: {
             select: { id: true, email: true, role: true }
-          }
+          },
+          faceSamples: {
+            where: { slot: 1 },
+            select: { slot: true, imagePath: true },
+          },
         },
         orderBy: { createdAt: 'desc' }
       }),

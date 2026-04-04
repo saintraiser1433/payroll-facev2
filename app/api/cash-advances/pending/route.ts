@@ -27,7 +27,9 @@ export async function GET(request: NextRequest) {
       },
       orderBy: { createdAt: "desc" },
       include: {
-        employee: { select: { id: true, employeeId: true, firstName: true, lastName: true, position: true } },
+        employee: {
+          select: { id: true, employeeId: true, firstName: true, lastName: true, position: true, email: true },
+        },
         approvedBy: { select: { id: true, firstName: true, lastName: true } },
       },
     })

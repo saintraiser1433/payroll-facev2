@@ -122,15 +122,14 @@ export default function SignInPage() {
         {/* Login Form */}
         <Card className="w-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-2 border-cyan-200/50 dark:border-cyan-700/50 shadow-2xl">
         <CardHeader className="text-center space-y-4">
-          <div className="relative w-20 h-20 mx-auto">
-            <div className="absolute inset-0 bg-gradient-to-br from-cyan-400 to-blue-600 rounded-full blur-lg opacity-50" />
-            <div className="relative w-20 h-20 rounded-full overflow-hidden bg-white dark:bg-slate-800 flex items-center justify-center shadow-lg border-4 border-white dark:border-slate-800">
-              <img 
-                src="/logo.png" 
-                alt="Glan White Sand Beach Resort Logo" 
-                className="w-16 h-16 object-contain"
+          <div className="relative mx-auto flex justify-center px-4">
+            <div className="relative rounded-xl bg-white dark:bg-slate-950 px-6 py-3 shadow-lg border border-cyan-200/50 dark:border-cyan-800/50">
+              <img
+                src="/GWB.png"
+                alt="Glan Whitesand Beach Resort"
+                className="h-14 sm:h-16 w-auto max-w-[min(280px,85vw)] object-contain mx-auto"
                 onError={(e) => {
-                  console.error('Logo image failed to load:', e)
+                  console.error("Logo image failed to load:", e)
                 }}
               />
             </div>

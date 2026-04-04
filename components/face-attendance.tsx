@@ -7,12 +7,14 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Loader2 } from "lucide-react"
 
 type AttendanceType = "IN" | "OUT" | "BREAK_OUT" | "BREAK_IN"
+type FaceBoundingBox = { x: number; y: number; width: number; height: number }
 type FaceApiLike = typeof import("face-api.js")
 type LabeledFaceDescriptor = import("face-api.js").LabeledFaceDescriptors
 
 export function FaceRecognitionAttendance() {
   const videoRef = useRef<HTMLVideoElement | null>(null)
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const overlayRef = useRef<HTMLCanvasElement | null>(null)
+  const captureCanvasRef = useRef<HTMLCanvasElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const faceApiRef = useRef<FaceApiLike | null>(null)
   const matcherRef = useRef<import("face-api.js").FaceMatcher | null>(null)
@@ -28,7 +30,6 @@ export function FaceRecognitionAttendance() {
 
   const [selectedAction, setSelectedAction] = useState<AttendanceType | null>(null)
   const [recognized, setRecognized] = useState<{ employeeId: string; name: string } | null>(null)
-  const [capturedPreview, setCapturedPreview] = useState<string | null>(null)
 
   const [message, setMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null)
   const [autoDetectSupported, setAutoDetectSupported] = useState(false)
@@ -166,15 +167,55 @@ export function FaceRecognitionAttendance() {
     }
   }, [])
 
+  const drawFaceBox = (box: FaceBoundingBox | null) => {
+    const video = videoRef.current
+    const overlay = overlayRef.current
+    if (!video || !overlay) return
+
+    const rect = video.getBoundingClientRect()
+    if (rect.width === 0 || rect.height === 0) return
+
+    const dpr = typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1
+    overlay.width = Math.round(rect.width * dpr)
+    overlay.height = Math.round(rect.height * dpr)
+    overlay.style.width = `${rect.width}px`
+    overlay.style.height = `${rect.height}px`
+
+    const ctx = overlay.getContext("2d")
+    if (!ctx) return
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, rect.width, rect.height)
+
+    if (!box) return
+
+    const vw = video.videoWidth || 640
+    const vh = video.videoHeight || 480
+    const sx = rect.width / vw
+    const sy = rect.height / vh
+    const x = box.x * sx
+    const y = box.y * sy
+    const w = box.width * sx
+    const h = box.height * sy
+
+    ctx.strokeStyle = "rgba(34, 197, 94, 0.95)"
+    ctx.lineWidth = 3
+    ctx.setLineDash([6, 4])
+    ctx.strokeRect(x, y, w, h)
+    ctx.setLineDash([])
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.6)"
+    ctx.lineWidth = 1
+    ctx.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3)
+  }
+
   const captureAndSubmit = async (employeeId: string, employeeName: string) => {
-    if (!videoRef.current || !canvasRef.current) return
+    if (!videoRef.current || !captureCanvasRef.current) return
     if (!selectedAction) return
 
     setIsDetecting(true)
     setIsSubmitting(true)
     try {
       const video = videoRef.current
-      const canvas = canvasRef.current
+      const canvas = captureCanvasRef.current
       const width = video.videoWidth || 640
       const height = video.videoHeight || 480
       canvas.width = width
@@ -184,7 +225,6 @@ export function FaceRecognitionAttendance() {
       if (!ctx) throw new Error("Canvas context not available")
       ctx.drawImage(video, 0, 0, width, height)
       const dataUrl = canvas.toDataURL("image/png")
-      setCapturedPreview(dataUrl)
       setRecognized({ employeeId, name: employeeName })
 
       const res = await fetch("/api/attendance/qr-scan", {
@@ -218,22 +258,33 @@ export function FaceRecognitionAttendance() {
       const video = videoRef.current
       const matcher = matcherRef.current
       if (!faceapi || !video || !matcher) return
-      if (!selectedAction) return
+      if (video.readyState < 2) return
       if (isSubmitting || isDetecting) return
+
+      const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 })
+
+      if (!selectedAction) {
+        try {
+          const light = await faceapi.detectSingleFace(video, opts)
+          const l = light as { detection?: { box: FaceBoundingBox }; box?: FaceBoundingBox } | undefined
+          drawFaceBox(l?.detection?.box ?? l?.box ?? null)
+        } catch {
+          faceApiRef.current = null
+          modelReadyRef.current = false
+          setAutoDetectSupported(false)
+        }
+        consecutiveFaceFramesRef.current = 0
+        return
+      }
 
       const now = Date.now()
       if (now < cooldownUntilRef.current) return
-      if (video.readyState < 2) return
 
       try {
-        const face = await faceapi
-          .detectSingleFace(
-          video,
-          new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 })
-        )
-          .withFaceLandmarks()
-          .withFaceDescriptor()
-        if (face) {
+        const face = await faceapi.detectSingleFace(video, opts).withFaceLandmarks().withFaceDescriptor()
+        drawFaceBox(face?.detection?.box ?? null)
+
+        if (face?.descriptor) {
           consecutiveFaceFramesRef.current += 1
         } else {
           consecutiveFaceFramesRef.current = 0
@@ -316,11 +367,16 @@ export function FaceRecognitionAttendance() {
             <div className="relative">
               <video
                 ref={videoRef}
-                className="w-full rounded-md border border-border bg-black"
+                className="w-full rounded-md border border-border bg-black object-cover aspect-video"
                 playsInline
                 muted
               />
-              <canvas ref={canvasRef} className="hidden" />
+              <canvas
+                ref={overlayRef}
+                className="pointer-events-none absolute inset-0 h-full w-full rounded-md"
+                aria-hidden
+              />
+              <canvas ref={captureCanvasRef} className="hidden" aria-hidden />
               {isCameraStarting && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-md">
                   <div className="flex items-center gap-2 text-white">
@@ -330,14 +386,6 @@ export function FaceRecognitionAttendance() {
                 </div>
               )}
             </div>
-
-            {capturedPreview && (
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Captured Preview</p>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={capturedPreview} alt="Captured face preview" className="w-full rounded-md border border-border" />
-              </div>
-            )}
           </div>
         </div>
       </CardContent>

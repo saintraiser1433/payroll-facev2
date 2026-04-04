@@ -141,6 +141,10 @@ model Attendance {
   undertimeMinutes Int              @default(0)
   breakMinutes     Int              @default(0)
   notes            String?
+  /// Schedule snapshot from the employee’s previous attendance day (timeIn–timeOut)
+  oldScheduleTime  String?
+  /// Schedule snapshot at clock-in for this day (timeIn–timeOut)
+  newScheduleTime  String?
   createdAt        DateTime         @default(now())
   updatedAt        DateTime         @updatedAt
   employeeId       String
@@ -212,6 +216,16 @@ model PayrollDeduction {
   @@map("payroll_deductions")
 }
 
+model CashAdvancePolicy {
+  id                        String   @id @default("default")
+  fullPaymentInterestRate   Float    @default(0)
+  installmentInterestRate   Float    @default(0)
+  installmentMaxPeriods     Int      @default(12)
+  updatedAt                 DateTime @updatedAt
+
+  @@map("cash_advance_policies")
+}
+
 model CashAdvance {
   id         String   @id @default(cuid())
   amount     Float
@@ -226,6 +240,13 @@ model CashAdvance {
   updatedAt  DateTime @updatedAt
   employeeId String
   employee   Employee @relation("CashAdvanceEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+
+  repaymentType    CashAdvanceRepaymentType @default(FULL)
+  installmentCount Int?
+  interestRate       Float                    @default(0)
+  totalRepayable     Float?
+  remainingBalance   Float?
+  amountPerPeriod    Float?
 
   @@map("cash_advances")
 }
@@ -320,6 +341,11 @@ enum RequestStatus {
   PENDING
   APPROVED
   REJECTED
+}
+
+enum CashAdvanceRepaymentType {
+  FULL
+  INSTALLMENT
 }
 
 enum BenefitType {

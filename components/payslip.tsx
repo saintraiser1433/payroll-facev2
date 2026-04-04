@@ -83,14 +83,11 @@ export function Payslip({ isOpen, onClose, payslipData }: PayslipProps) {
     }).format(amount)
   }
 
-  // Calculate total deductions from displayed items to ensure consistency
-  const calculatedTotalDeductions = 
-    (payslipData.tardyDeduction || 0) +
-    (payslipData.undertimeDeduction || 0) +
-    payslipData.deductions.reduce((sum, deduction) => sum + deduction.amount, 0)
-  
-  // Recalculate net pay based on calculated deductions
-  const calculatedNetPay = payslipData.grossPay - calculatedTotalDeductions
+  const displayDeductions = payslipData.deductions.filter(
+    (d) => d.amount > 0 && d.deductionType?.name,
+  )
+  const calculatedTotalDeductions = payslipData.totalDeductions
+  const calculatedNetPay = payslipData.netPay
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -185,35 +182,15 @@ export function Payslip({ isOpen, onClose, payslipData }: PayslipProps) {
             <div className="border border-black p-2">
               <div className="text-center font-bold border-b border-black pb-1 mb-2">DEDUCTION</div>
               <div className="space-y-1 text-xs">
-                {/* Show tardy deduction if exists */}
-                {(payslipData.tardyDeduction ?? 0) > 0 && (
-                  <div className="flex justify-between">
-                    <span>TARDY</span>
-                    <span>{formatCurrency(payslipData.tardyDeduction ?? 0)}</span>
-                  </div>
-                )}
-                {/* Show undertime deduction if exists */}
-                {(payslipData.undertimeDeduction ?? 0) > 0 && (
-                  <div className="flex justify-between">
-                    <span>UNDERTIME</span>
-                    <span>{formatCurrency(payslipData.undertimeDeduction ?? 0)}</span>
-                  </div>
-                )}
-                {/* Show other deductions */}
-                {payslipData.deductions.filter(d => d.amount > 0 && d.deductionType?.name).length > 0 ? (
-                  payslipData.deductions
-                    .filter(d => d.amount > 0 && d.deductionType?.name)
-                    .map((deduction, index) => (
-                      <div key={index} className="flex justify-between">
-                        <span>{deduction.deductionType.name}</span>
-                        <span>{formatCurrency(deduction.amount)}</span>
-                      </div>
-                    ))
+                {displayDeductions.length > 0 ? (
+                  displayDeductions.map((deduction, index) => (
+                    <div key={index} className="flex justify-between">
+                      <span>{deduction.deductionType.name.toUpperCase()}</span>
+                      <span>{formatCurrency(deduction.amount)}</span>
+                    </div>
+                  ))
                 ) : (
-                  ((!payslipData.tardyDeduction || payslipData.tardyDeduction === 0) &&
-                  (!payslipData.undertimeDeduction || payslipData.undertimeDeduction === 0)) ? (
-                    <div className="text-center text-muted-foreground">No deductions</div>
-                  ) : null
+                  <div className="text-center text-muted-foreground">No deductions</div>
                 )}
               </div>
             </div>
@@ -306,14 +283,11 @@ function generatePayslipHTML(payslipData: PayslipData): string {
     }
   }
 
-  // Calculate total deductions from displayed items to ensure consistency
-  const calculatedTotalDeductions = 
-    (payslipData.tardyDeduction || 0) +
-    (payslipData.undertimeDeduction || 0) +
-    payslipData.deductions.reduce((sum, deduction) => sum + deduction.amount, 0)
-  
-  // Recalculate net pay based on calculated deductions
-  const calculatedNetPay = payslipData.grossPay - calculatedTotalDeductions
+  const displayDeductionsHtml = payslipData.deductions.filter(
+    (d) => d.amount > 0 && d.deductionType?.name,
+  )
+  const calculatedTotalDeductions = payslipData.totalDeductions
+  const calculatedNetPay = payslipData.netPay
 
   return `
     <!DOCTYPE html>
@@ -424,31 +398,17 @@ function generatePayslipHTML(payslipData: PayslipData): string {
             <div class="border p-2">
               <div class="text-center font-bold border-b pb-1 mb-2">DEDUCTION</div>
               <div style="font-size: 10px;">
-                ${(payslipData.tardyDeduction ?? 0) > 0 ? `
+                ${displayDeductionsHtml.length > 0
+                  ? displayDeductionsHtml
+                      .map(
+                        (deduction) => `
                 <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                  <span>TARDY</span>
-                  <span>${formatCurrency(payslipData.tardyDeduction ?? 0)}</span>
-                </div>
-                ` : ''}
-                ${(payslipData.undertimeDeduction ?? 0) > 0 ? `
-                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                  <span>UNDERTIME</span>
-                  <span>${formatCurrency(payslipData.undertimeDeduction ?? 0)}</span>
-                </div>
-                ` : ''}
-                ${payslipData.deductions.filter(d => d.amount > 0 && d.deductionType?.name).length > 0 ? 
-                  payslipData.deductions
-                    .filter(d => d.amount > 0 && d.deductionType?.name)
-                    .map(deduction => `
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                      <span>${deduction.deductionType.name}</span>
-                      <span>${formatCurrency(deduction.amount)}</span>
-                    </div>
-                  `).join('') : 
-                  (!payslipData.tardyDeduction || payslipData.tardyDeduction === 0) &&
-                  (!payslipData.undertimeDeduction || payslipData.undertimeDeduction === 0) ?
-                  '<div style="text-align: center; color: #666;">No deductions</div>' : ''
-                }
+                  <span>${deduction.deductionType.name.toUpperCase()}</span>
+                  <span>${formatCurrency(deduction.amount)}</span>
+                </div>`,
+                      )
+                      .join("")
+                  : '<div style="text-align: center; color: #666;">No deductions</div>'}
               </div>
             </div>
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useSession } from "next-auth/react"
-import { Plus, Search, MoreHorizontal, Edit, UserX, UserCheck, Eye, Users, Building2, Calendar, DollarSign, Shield, X, EyeOff, QrCode } from "lucide-react"
+import { Plus, Search, MoreHorizontal, Edit, UserX, UserCheck, Eye, Users, Building2, Calendar, DollarSign, Shield, X, EyeOff, UserRound, UserRoundCheck } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -61,6 +61,7 @@ interface Employee {
   hireDate: string
   profileImage?: string
   qrCode?: string
+  faceSamples?: { slot: number; imagePath: string }[]
   isActive: boolean
   department?: {
     id: string
@@ -161,10 +162,8 @@ export default function EmployeesPage() {
   })
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false)
-  const [isQRCodeDialogOpen, setIsQRCodeDialogOpen] = useState(false)
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null)
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null)
-  const [qrCodeEmployee, setQrCodeEmployee] = useState<Employee | null>(null)
   const [confirmDialog, setConfirmDialog] = useState({
     open: false,
     title: "",
@@ -432,10 +431,10 @@ export default function EmployeesPage() {
     setIsViewDialogOpen(true)
   }
 
-  const handleViewQRCode = (employee: Employee) => {
-    setQrCodeEmployee(employee)
-    setIsQRCodeDialogOpen(true)
-  }
+  const face1ImageSrc = (employee: Employee) =>
+    employee.faceSamples?.find((f) => f.slot === 1)?.imagePath
+
+  const hasFace1 = (employee: Employee) => Boolean(face1ImageSrc(employee))
 
   const handleEdit = (employee: Employee) => {
     setEditingEmployee(employee)
@@ -1262,13 +1261,14 @@ export default function EmployeesPage() {
                               <TableHead>Department</TableHead>
                               <TableHead>Schedule</TableHead>
                               <TableHead>Salary</TableHead>
+                              <TableHead className="text-center">Face</TableHead>
                               <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {employees.length === 0 ? (
                               <TableRow>
-                                <TableCell colSpan={7} className="text-center text-muted-foreground">
+                                <TableCell colSpan={8} className="text-center text-muted-foreground">
                                   No active employees found
                                 </TableCell>
                               </TableRow>
@@ -1278,7 +1278,7 @@ export default function EmployeesPage() {
                                   <TableCell className="font-medium">
                                     <div className="flex items-center space-x-3">
                                       <Avatar className="h-8 w-8">
-                                        <AvatarImage src={employee.profileImage} />
+                                        <AvatarImage src={face1ImageSrc(employee)} />
                                         <AvatarFallback>
                                           {employee.firstName[0]}{employee.lastName[0]}
                                         </AvatarFallback>
@@ -1314,6 +1314,19 @@ export default function EmployeesPage() {
                                       ? `₱${getPositionSalaryRate(employee.position)!.toLocaleString()}`
                                       : "Not set"}
                                   </TableCell>
+                                  <TableCell className="text-center">
+                                    {hasFace1(employee) ? (
+                                      <span className="inline-flex items-center gap-1 text-sm text-green-600" title="Face sample 1 uploaded">
+                                        <UserRoundCheck className="h-4 w-4 shrink-0" />
+                                        Yes
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 text-sm text-muted-foreground" title="No face sample 1">
+                                        <UserRound className="h-4 w-4 shrink-0" />
+                                        No
+                                      </span>
+                                    )}
+                                  </TableCell>
                                   <TableCell className="text-right">
                                     <DropdownMenu>
                                       <DropdownMenuTrigger asChild>
@@ -1327,12 +1340,6 @@ export default function EmployeesPage() {
                                           <Eye className="mr-2 h-4 w-4" />
                                           View Details
                                         </DropdownMenuItem>
-                                        {employee.isActive && employee.qrCode && (
-                                          <DropdownMenuItem onClick={() => handleViewQRCode(employee)}>
-                                            <QrCode className="mr-2 h-4 w-4" />
-                                            View QR Code
-                                          </DropdownMenuItem>
-                                        )}
                                         {isAdmin && (
                                           <>
                                             <DropdownMenuItem onClick={() => handleEdit(employee)}>
@@ -1394,13 +1401,14 @@ export default function EmployeesPage() {
                               <TableHead>Department</TableHead>
                               <TableHead>Schedule</TableHead>
                               <TableHead>Salary</TableHead>
+                              <TableHead className="text-center">Face</TableHead>
                               <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
                             {employees.length === 0 ? (
                               <TableRow>
-                                <TableCell colSpan={7} className="text-center text-muted-foreground">
+                                <TableCell colSpan={8} className="text-center text-muted-foreground">
                                   No inactive employees found
                                 </TableCell>
                               </TableRow>
@@ -1410,7 +1418,7 @@ export default function EmployeesPage() {
                                   <TableCell className="font-medium">
                                     <div className="flex items-center space-x-3">
                                       <Avatar className="h-8 w-8">
-                                        <AvatarImage src={employee.profileImage} />
+                                        <AvatarImage src={face1ImageSrc(employee)} />
                                         <AvatarFallback>
                                           {employee.firstName[0]}{employee.lastName[0]}
                                         </AvatarFallback>
@@ -1446,6 +1454,19 @@ export default function EmployeesPage() {
                                       ? `₱${getPositionSalaryRate(employee.position)!.toLocaleString()}`
                                       : "Not set"}
                                   </TableCell>
+                                  <TableCell className="text-center">
+                                    {hasFace1(employee) ? (
+                                      <span className="inline-flex items-center gap-1 text-sm text-green-600" title="Face sample 1 uploaded">
+                                        <UserRoundCheck className="h-4 w-4 shrink-0" />
+                                        Yes
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 text-sm text-muted-foreground" title="No face sample 1">
+                                        <UserRound className="h-4 w-4 shrink-0" />
+                                        No
+                                      </span>
+                                    )}
+                                  </TableCell>
                                   <TableCell className="text-right">
                                     <DropdownMenu>
                                       <DropdownMenuTrigger asChild>
@@ -1459,12 +1480,6 @@ export default function EmployeesPage() {
                                           <Eye className="mr-2 h-4 w-4" />
                                           View Details
                                         </DropdownMenuItem>
-                                        {employee.isActive && employee.qrCode && (
-                                          <DropdownMenuItem onClick={() => handleViewQRCode(employee)}>
-                                            <QrCode className="mr-2 h-4 w-4" />
-                                            View QR Code
-                                          </DropdownMenuItem>
-                                        )}
                                         {isAdmin && (
                                           <>
                                             <DropdownMenuItem onClick={() => handleEdit(employee)}>
@@ -1617,7 +1632,7 @@ export default function EmployeesPage() {
               <div className="space-y-6">
                 <div className="flex items-center space-x-4">
                   <Avatar className="h-16 w-16">
-                    <AvatarImage src={viewingEmployee.profileImage} />
+                    <AvatarImage src={face1ImageSrc(viewingEmployee)} />
                     <AvatarFallback className="text-lg">
                       {viewingEmployee.firstName[0]}{viewingEmployee.lastName[0]}
                     </AvatarFallback>
@@ -1687,24 +1702,6 @@ export default function EmployeesPage() {
                   <div>
                     <Label className="text-sm font-medium text-muted-foreground">Job Description</Label>
                     <p className="text-sm">{viewingEmployee.jobDescription}</p>
-                  </div>
-                )}
-
-                {viewingEmployee.isActive && viewingEmployee.qrCode && (
-                  <div className="border-t pt-6">
-                    <Label className="text-sm font-medium text-muted-foreground mb-4 block">QR Code</Label>
-                    <div className="flex flex-col items-center space-y-2">
-                      <div className="border rounded-lg p-4 bg-white">
-                        <img 
-                          src={viewingEmployee.qrCode} 
-                          alt={`QR Code for ${viewingEmployee.employeeId}`}
-                          className="w-48 h-48"
-                        />
-                      </div>
-                      <p className="text-xs text-muted-foreground">
-                        Employee ID: {viewingEmployee.employeeId}
-                      </p>
-                    </div>
                   </div>
                 )}
               </div>
@@ -1822,72 +1819,6 @@ export default function EmployeesPage() {
                   Assign Benefit
                 </Button>
               )}
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* QR Code Dialog */}
-        <Dialog open={isQRCodeDialogOpen} onOpenChange={setIsQRCodeDialogOpen}>
-          <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Employee QR Code</DialogTitle>
-              <DialogDescription>
-                QR Code for {qrCodeEmployee?.firstName} {qrCodeEmployee?.lastName}
-              </DialogDescription>
-            </DialogHeader>
-            {qrCodeEmployee && qrCodeEmployee.qrCode && (
-              <div className="flex flex-col items-center space-y-4 py-4">
-                <div className="border-2 border-gray-200 rounded-lg p-6 bg-white shadow-sm">
-                  <img 
-                    src={qrCodeEmployee.qrCode} 
-                    alt={`QR Code for ${qrCodeEmployee.employeeId}`}
-                    className="w-64 h-64 mx-auto"
-                  />
-                </div>
-                <div className="text-center space-y-2">
-                  <p className="text-sm font-medium">
-                    Employee ID: <span className="font-mono">{qrCodeEmployee.employeeId}</span>
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {qrCodeEmployee.firstName} {qrCodeEmployee.lastName}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {qrCodeEmployee.position}
-                  </p>
-                </div>
-                <div className="flex gap-2 w-full">
-                  <Button
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => {
-                      const link = document.createElement('a')
-                      link.href = qrCodeEmployee.qrCode!
-                      link.download = `QR_Code_${qrCodeEmployee.employeeId}.png`
-                      link.click()
-                    }}
-                  >
-                    Download QR Code
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="flex-1"
-                    onClick={() => {
-                      navigator.clipboard.writeText(qrCodeEmployee.employeeId)
-                      toast({
-                        title: "Copied!",
-                        description: "Employee ID copied to clipboard",
-                      })
-                    }}
-                  >
-                    Copy Employee ID
-                  </Button>
-                </div>
-              </div>
-            )}
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsQRCodeDialogOpen(false)}>
-                Close
-              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

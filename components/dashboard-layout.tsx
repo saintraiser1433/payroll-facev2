@@ -5,7 +5,23 @@ import type React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useSession, signOut } from "next-auth/react"
-import { Search, Home, Users, Building2, Clock, DollarSign, BarChart3, Calendar, ArrowRight, UserCheck, LogOut, Shield, CalendarDays } from "lucide-react"
+import {
+  Search,
+  Home,
+  Users,
+  Building2,
+  Clock,
+  DollarSign,
+  BarChart3,
+  Calendar,
+  ArrowRight,
+  LogOut,
+  Shield,
+  CalendarDays,
+  Timer,
+  Wallet,
+  FileText,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -18,6 +34,7 @@ import {
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { TopbarNotifications } from "@/components/topbar-notifications"
 
 // Role-based navigation menus
 const adminNavigation = [
@@ -33,16 +50,66 @@ const adminNavigation = [
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
 ]
 
-const departmentHeadNavigation = [
+const departmentHeadPayrollNav = [
   { name: "Dashboard", href: "/department-head-dashboard", icon: Home },
+  { name: "Department attendance", href: "/department-head-dashboard/department-attendance", icon: Users },
+  { name: "Department payroll", href: "/department-head-dashboard/department-payroll", icon: DollarSign },
+  { name: "My DTR", href: "/department-head-dashboard/my-dtr", icon: Clock },
+  { name: "My payslip", href: "/department-head-dashboard/my-payslip", icon: FileText },
 ]
 
+const departmentHeadRequestNav = [
+  { name: "Overtime request", href: "/department-head-dashboard/requests/overtime", icon: Timer },
+  { name: "Cash advance request", href: "/department-head-dashboard/requests/cash-advance", icon: Wallet },
+  { name: "Leave request", href: "/department-head-dashboard/requests/leave", icon: CalendarDays },
+]
+
+function departmentHeadLinkActive(pathname: string, href: string) {
+  if (href === "/department-head-dashboard") return pathname === "/department-head-dashboard"
+  return pathname === href || pathname.startsWith(`${href}/`)
+}
+
 const employeeNavigation = [
-  { name: "Dashboard", href: "/employee-dashboard", icon: Home },
+  { name: "Dashboard", href: "/employee-dashboard", icon: BarChart3 },
+  { name: "My Attendance", href: "/employee-dashboard/my-attendance", icon: Clock },
+  { name: "My Payslip", href: "/employee-dashboard/my-payslip", icon: DollarSign },
+  { name: "Overtime", href: "/employee-dashboard/overtime", icon: Timer },
+  { name: "Cash Advance", href: "/employee-dashboard/cash-advance", icon: Wallet },
+  { name: "Leave", href: "/employee-dashboard/leave", icon: CalendarDays },
 ]
 
 interface DashboardLayoutProps {
   children: React.ReactNode
+}
+
+function sidebarPageTitle(pathname: string) {
+  if (pathname === "/") return "Overview"
+  if (pathname === "/department-head-dashboard") return "Dashboard"
+  if (pathname.startsWith("/department-head-dashboard/")) {
+    const map: Record<string, string> = {
+      "/department-head-dashboard/department-attendance": "Department Attendance",
+      "/department-head-dashboard/department-payroll": "Department Payroll",
+      "/department-head-dashboard/my-dtr": "My DTR",
+      "/department-head-dashboard/my-payslip": "My Payslip",
+      "/department-head-dashboard/requests/overtime": "Overtime Request",
+      "/department-head-dashboard/requests/cash-advance": "Cash Advance Request",
+      "/department-head-dashboard/requests/leave": "Leave Request",
+    }
+    return map[pathname] || pathname.replace("/department-head-dashboard/", "").replace(/-/g, " ")
+  }
+  if (pathname === "/employee-dashboard") return "Employee Dashboard"
+  if (pathname.startsWith("/employee-dashboard/")) {
+    const key = pathname.replace("/employee-dashboard/", "")
+    const map: Record<string, string> = {
+      "my-attendance": "My Attendance",
+      "my-payslip": "My Payslip",
+      overtime: "Overtime",
+      "cash-advance": "Cash Advance",
+      leave: "Leave",
+    }
+    return map[key] || key
+  }
+  return pathname.slice(1)
 }
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
@@ -54,11 +121,11 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     if (!session?.user?.role) return []
     
     switch (session.user.role) {
-      case 'ADMIN':
+      case "ADMIN":
         return adminNavigation
-      case 'DEPARTMENT_HEAD':
-        return departmentHeadNavigation
-      case 'EMPLOYEE':
+      case "DEPARTMENT_HEAD":
+        return null
+      case "EMPLOYEE":
         return employeeNavigation
       default:
         return []
@@ -88,12 +155,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           </div>
           <div className="text-sm text-muted-foreground">
             <span className="capitalize">{session?.user?.role?.replace('_', ' ') || 'Dashboard'}</span> <span className="mx-1">/</span>
-            <span className="capitalize">
-              {pathname === "/" ? "Overview" : 
-               pathname === "/department-head-dashboard" ? "Department Dashboard" :
-               pathname === "/employee-dashboard" ? "Employee Dashboard" :
-               pathname.slice(1)}
-            </span>
+            <span className="capitalize">{sidebarPageTitle(pathname)}</span>
           </div>
         </div>
 
@@ -105,6 +167,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
               className="pl-10 w-80 bg-muted border-border focus:bg-background"
             />
           </div>
+          <TopbarNotifications />
           <ThemeToggle />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -174,21 +237,81 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
             </div>
 
             <nav className="space-y-1">
-              {navigation.map((item) => {
-                const isActive = pathname === item.href
-                return (
-                  <Link
-                    key={item.name}
-                    href={item.href}
-                        className={`flex items-center w-full justify-start px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                          isActive ? "bg-primary/10 text-primary hover:bg-primary/20" : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                        }`}
-                  >
-                    <item.icon className="w-4 h-4 mr-3" />
-                    {item.name}
-                  </Link>
-                )
-              })}
+              {session?.user?.role === "DEPARTMENT_HEAD" ? (
+                <div className="space-y-5">
+                  <div>
+                    <p className="px-3 mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Payroll
+                    </p>
+                    <div className="space-y-1">
+                      {departmentHeadPayrollNav.map((item) => {
+                        const isActive = departmentHeadLinkActive(pathname, item.href)
+                        return (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            className={`flex items-center w-full justify-start px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                              isActive
+                                ? "bg-primary/10 text-primary hover:bg-primary/20"
+                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                            }`}
+                          >
+                            <item.icon className="w-4 h-4 mr-3 shrink-0" />
+                            {item.name}
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="px-3 mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Request
+                    </p>
+                    <div className="space-y-1">
+                      {departmentHeadRequestNav.map((item) => {
+                        const isActive = departmentHeadLinkActive(pathname, item.href)
+                        return (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            className={`flex items-center w-full justify-start px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                              isActive
+                                ? "bg-primary/10 text-primary hover:bg-primary/20"
+                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                            }`}
+                          >
+                            <item.icon className="w-4 h-4 mr-3 shrink-0" />
+                            {item.name}
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                (navigation ?? []).map((item) => {
+                  const isActive =
+                    item.href === "/"
+                      ? pathname === "/"
+                      : item.href === "/employee-dashboard"
+                        ? pathname === "/employee-dashboard"
+                        : pathname === item.href || pathname.startsWith(`${item.href}/`)
+                  return (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      className={`flex items-center w-full justify-start px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                        isActive
+                          ? "bg-primary/10 text-primary hover:bg-primary/20"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      }`}
+                    >
+                      <item.icon className="w-4 h-4 mr-3" />
+                      {item.name}
+                    </Link>
+                  )
+                })
+              )}
             </nav>
           </div>
         </aside>

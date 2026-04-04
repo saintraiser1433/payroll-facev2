@@ -171,6 +171,14 @@ export default function PayrollPage() {
   })
   const [periodsSearchTerm, setPeriodsSearchTerm] = useState("")
   const [showPeriodsFilters, setShowPeriodsFilters] = useState(false)
+  /** Open = DRAFT, Done = CLOSED (when period status filter is "all") */
+  const [periodListScope, setPeriodListScope] = useState<"open" | "done">("open")
+  const [caPolicy, setCaPolicy] = useState({
+    fullPaymentInterestRate: 0,
+    installmentInterestRate: 0,
+    installmentMaxPeriods: 12,
+  })
+  const [caPolicySaving, setCaPolicySaving] = useState(false)
   
   // Sorting state for periods
   const [periodsSortField, setPeriodsSortField] = useState<string>("")
@@ -215,7 +223,38 @@ export default function PayrollPage() {
     if (isEmployee) {
       fetchPayrollItems()
     }
-  }, [periodsPagination.page, periodsPagination.limit, periodsSearchTerm, periodsFilters, periodsSortField, periodsSortDirection])
+  }, [
+    periodsPagination.page,
+    periodsPagination.limit,
+    periodsSearchTerm,
+    periodsFilters,
+    periodsSortField,
+    periodsSortDirection,
+    periodListScope,
+  ])
+
+  useEffect(() => {
+    if (!isAdmin) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch("/api/cash-advance-policy")
+        if (!res.ok) return
+        const data = await res.json()
+        if (cancelled || !data.policy) return
+        setCaPolicy({
+          fullPaymentInterestRate: data.policy.fullPaymentInterestRate ?? 0,
+          installmentInterestRate: data.policy.installmentInterestRate ?? 0,
+          installmentMaxPeriods: data.policy.installmentMaxPeriods ?? 12,
+        })
+      } catch {
+        /* ignore */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [isAdmin])
 
   // Separate useEffect for fetching departments and positions
   useEffect(() => {
@@ -231,6 +270,30 @@ export default function PayrollPage() {
     }
   }, [selectedPeriod, itemsPagination.page, itemsPagination.limit, searchTerm, filters])
 
+  const saveCashAdvancePolicy = async () => {
+    setCaPolicySaving(true)
+    try {
+      const res = await fetch("/api/cash-advance-policy", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(caPolicy),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || "Failed to save")
+      }
+      toast({ title: "Saved", description: "Cash advance settings updated." })
+    } catch (e) {
+      toast({
+        title: "Error",
+        description: e instanceof Error ? e.message : "Save failed",
+        variant: "destructive",
+      })
+    } finally {
+      setCaPolicySaving(false)
+    }
+  }
+
   const fetchPayrollPeriods = async () => {
     try {
       const params = new URLSearchParams()
@@ -240,8 +303,13 @@ export default function PayrollPage() {
       // Add search parameter
       if (periodsSearchTerm) params.append('search', periodsSearchTerm)
       
-      // Add filter parameters
-      if (periodsFilters.status !== 'all') params.append('status', periodsFilters.status)
+      const statusParam =
+        periodsFilters.status !== "all"
+          ? periodsFilters.status
+          : periodListScope === "open"
+            ? "DRAFT"
+            : "CLOSED"
+      params.append("status", statusParam)
       if (periodsFilters.dateRange.start) params.append('startDate', periodsFilters.dateRange.start)
       if (periodsFilters.dateRange.end) params.append('endDate', periodsFilters.dateRange.end)
       if (periodsFilters.minAmount) params.append('minAmount', periodsFilters.minAmount)
@@ -1036,12 +1104,92 @@ export default function PayrollPage() {
                 </Card>
               </div>
 
+              {isAdmin && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Cash advance payment settings</CardTitle>
+                    <CardDescription>
+                      Defaults for validating employee requests: max installment periods and reference interest rates (employees choose full vs installment and enter interest when applying).
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
+                    <div className="space-y-2">
+                      <Label>Full payment — interest % (reference)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        className="w-40"
+                        value={caPolicy.fullPaymentInterestRate}
+                        onChange={(e) =>
+                          setCaPolicy((p) => ({
+                            ...p,
+                            fullPaymentInterestRate: parseFloat(e.target.value) || 0,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Installment — interest % (reference)</Label>
+                      <Input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        className="w-40"
+                        value={caPolicy.installmentInterestRate}
+                        onChange={(e) =>
+                          setCaPolicy((p) => ({
+                            ...p,
+                            installmentInterestRate: parseFloat(e.target.value) || 0,
+                          }))
+                        }
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Max installment periods</Label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={120}
+                        className="w-32"
+                        value={caPolicy.installmentMaxPeriods}
+                        onChange={(e) =>
+                          setCaPolicy((p) => ({
+                            ...p,
+                            installmentMaxPeriods: parseInt(e.target.value, 10) || 1,
+                          }))
+                        }
+                      />
+                    </div>
+                    <Button type="button" onClick={saveCashAdvancePolicy} disabled={caPolicySaving}>
+                      {caPolicySaving ? "Saving…" : "Save settings"}
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
+
               <Card>
                 <CardHeader>
-                  <CardTitle>Payroll Periods</CardTitle>
-                  <CardDescription>
-                    Manage payroll periods and calculate employee payments
-                  </CardDescription>
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <CardTitle>Payroll Periods</CardTitle>
+                      <CardDescription>
+                        Manage payroll periods and calculate employee payments
+                      </CardDescription>
+                    </div>
+                    <Tabs
+                      value={periodListScope}
+                      onValueChange={(v) => {
+                        setPeriodListScope(v as "open" | "done")
+                        setPeriodsPagination((p) => ({ ...p, page: 1 }))
+                      }}
+                    >
+                      <TabsList>
+                        <TabsTrigger value="open">Open periods</TabsTrigger>
+                        <TabsTrigger value="done">Done periods</TabsTrigger>
+                      </TabsList>
+                    </Tabs>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   <Table>

@@ -3,24 +3,20 @@
 import { useState, useEffect } from "react"
 import { useSession } from "next-auth/react"
 import {
-  Clock,
-  Calendar,
   Users,
   CheckCircle,
   XCircle,
   AlertTriangle,
   Timer,
-  Plus,
   Search,
-  Filter,
-  Download,
   Coffee,
-  ArrowRight,
   TrendingUp,
   Activity,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  Pencil,
+  Trash2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -35,12 +31,25 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { Label } from "@/components/ui/label"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useToast } from "@/hooks/use-toast"
 import { ConfirmationDialog } from "@/components/ui/confirmation-dialog"
 import { DataTablePagination } from "@/components/ui/data-table-pagination"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  formatAttendanceTableDate,
+  formatScheduleSnapshot12h,
+} from "@/lib/format-display"
+import { computeAttendanceDisplayMetrics } from "@/lib/attendance-row-metrics"
 
 interface AttendanceRecord {
   id: string
@@ -55,6 +64,8 @@ interface AttendanceRecord {
   undertimeMinutes: number
   breakMinutes?: number
   notes?: string
+  oldScheduleTime?: string | null
+  newScheduleTime?: string | null
   employee: {
     id: string
     employeeId: string
@@ -64,6 +75,12 @@ interface AttendanceRecord {
     department?: {
       name: string
     }
+    schedule?: {
+      timeIn: string
+      timeOut: string
+      name?: string
+    } | null
+    faceSamples?: { slot: number; imagePath: string }[]
   }
 }
 
@@ -95,14 +112,10 @@ export default function AttendancePage() {
   const { toast } = useToast()
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
-  const [schedules, setSchedules] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [employeesLoading, setEmployeesLoading] = useState(false)
-  const [clockLoading, setClockLoading] = useState(false)
-  const [todayAttendanceRecord, setTodayAttendanceRecord] = useState<any>(null)
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedEmployee, setSelectedEmployee] = useState("") // For filtering attendance records
-  const [clockInEmployee, setClockInEmployee] = useState("") // For clock in/out operations
   const [attendanceStats, setAttendanceStats] = useState({
     presentToday: 0,
     lateToday: 0,
@@ -124,16 +137,22 @@ export default function AttendancePage() {
     total: 0,
     pages: 0,
   })
-  const [confirmDialog, setConfirmDialog] = useState({
-    open: false,
-    title: "",
-    description: "",
-    action: () => {},
-  })
-
-  const isEmployee = session?.user?.role === 'EMPLOYEE'
-  const isDepartmentHead = session?.user?.role === 'DEPARTMENT_HEAD'
   const isAdmin = session?.user?.role === 'ADMIN'
+
+  const [editOpen, setEditOpen] = useState(false)
+  const [editSaving, setEditSaving] = useState(false)
+  const [editRecord, setEditRecord] = useState<AttendanceRecord | null>(null)
+  const [editForm, setEditForm] = useState({
+    timeIn: "",
+    timeOut: "",
+    breakOut: "",
+    breakIn: "",
+    breakMinutes: "",
+    notes: "",
+    status: "PRESENT" as AttendanceRecord["status"],
+  })
+  const [deleteTarget, setDeleteTarget] = useState<AttendanceRecord | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
 
   useEffect(() => {
     fetchAttendanceRecords()
@@ -160,7 +179,6 @@ export default function AttendancePage() {
   useEffect(() => {
     if (isAdmin) {
       fetchEmployees()
-      fetchSchedules()
     }
   }, [isAdmin])
 
@@ -179,11 +197,6 @@ export default function AttendancePage() {
     }
   }, [attendanceRecords])
 
-  // Debug useEffect to track clockInEmployee changes
-  useEffect(() => {
-    console.log('clockInEmployee state changed to:', clockInEmployee)
-  }, [clockInEmployee])
-
   // Debug useEffect to track attendanceStats changes
   useEffect(() => {
     console.log('attendanceStats state changed to:', attendanceStats)
@@ -197,45 +210,6 @@ export default function AttendancePage() {
 
     return () => clearTimeout(delayedSearch)
   }, [searchTerm, selectedEmployee, startDateFilter, endDateFilter, statusFilter, sortField, sortDirection, pagination.page, pagination.limit])
-
-  // Separate useEffect to refresh attendance when clockInEmployee changes
-  useEffect(() => {
-    if (clockInEmployee && isAdmin) {
-      console.log('Fetching data for selected employee:', clockInEmployee)
-      fetchAttendanceRecords()
-      // Also fetch today's record for this employee
-      fetchTodayAttendance(clockInEmployee).then((record) => {
-        console.log('Setting today attendance record:', record)
-        setTodayAttendanceRecord(record)
-      })
-    } else if (!clockInEmployee && isAdmin) {
-      console.log('No employee selected, clearing today record')
-      setTodayAttendanceRecord(null)
-    }
-  }, [clockInEmployee])
-
-  // Fetch today's attendance for employees on component mount
-  useEffect(() => {
-    if (isEmployee && session?.user?.id) {
-      const fetchEmployeeTodayRecord = async () => {
-        try {
-          const employeeResponse = await fetch('/api/employees?limit=100&isActive=true')
-          if (!employeeResponse.ok) return
-          const employeeData = await employeeResponse.json()
-          const currentEmployee = employeeData.employees.find((emp: Employee) => 
-            emp.user?.id === session.user.id
-          )
-          if (currentEmployee) {
-            const todayRecord = await fetchTodayAttendance(currentEmployee.id)
-            setTodayAttendanceRecord(todayRecord)
-          }
-        } catch (error) {
-          console.error('Error fetching employee today record:', error)
-        }
-      }
-      fetchEmployeeTodayRecord()
-    }
-  }, [isEmployee, session?.user?.id])
 
   const fetchAttendanceRecords = async () => {
     try {
@@ -391,11 +365,6 @@ export default function AttendancePage() {
       const data = await response.json()
       console.log('Fetched employees data:', data.employees?.length || 0, 'employees')
       setEmployees(data.employees || [])
-      
-      // Don't reset clockInEmployee if it's already set and valid
-      if (clockInEmployee && data.employees?.some((emp: any) => emp.id === clockInEmployee)) {
-        console.log('Keeping existing employee selection:', clockInEmployee)
-      }
     } catch (error) {
       console.error('Error fetching employees:', error)
       toast({
@@ -405,155 +374,6 @@ export default function AttendancePage() {
       })
     } finally {
       setEmployeesLoading(false)
-    }
-  }
-
-  const fetchSchedules = async () => {
-    try {
-      const response = await fetch('/api/schedules?limit=100')
-      if (!response.ok) throw new Error('Failed to fetch schedules')
-      const data = await response.json()
-      setSchedules(data.schedules || [])
-    } catch (error) {
-      console.error('Error fetching schedules:', error)
-    }
-  }
-
-  const handleClockInOut = (type: 'IN' | 'OUT' | 'BREAK_OUT' | 'BREAK_IN') => {
-    if (!session?.user?.id) return
-
-    const getActionText = () => {
-      switch (type) {
-        case 'IN': return 'clock in'
-        case 'OUT': return 'clock out'
-        case 'BREAK_OUT': return 'go on break'
-        case 'BREAK_IN': return 'return from break'
-        default: return 'perform action'
-      }
-    }
-
-    const getTitle = () => {
-      switch (type) {
-        case 'IN': return 'Clock In'
-        case 'OUT': return 'Clock Out'
-        case 'BREAK_OUT': return 'Break Out'
-        case 'BREAK_IN': return 'Break In'
-        default: return 'Action'
-      }
-    }
-
-    setConfirmDialog({
-      open: true,
-      title: getTitle(),
-      description: `Are you sure you want to ${getActionText()} at ${currentTime.toLocaleTimeString()}?`,
-      action: () => performClockInOut(type),
-    })
-  }
-
-  const performClockInOut = async (type: 'IN' | 'OUT' | 'BREAK_OUT' | 'BREAK_IN') => {
-    if (!session?.user?.id) return
-
-    setClockLoading(true)
-    try {
-      // Get current user's employee record
-      let employeeId = clockInEmployee
-      
-      console.log('performClockInOut - Initial state:', {
-        type,
-        clockInEmployee,
-        todayAttendanceRecord: todayAttendanceRecord ? 'exists' : 'null',
-        isEmployee
-      })
-      
-      // If no clockInEmployee but we have todayAttendanceRecord, use that employee
-      if (!employeeId && todayAttendanceRecord?.employee?.id) {
-        employeeId = todayAttendanceRecord.employee.id
-        console.log('Using employee ID from today record:', employeeId)
-        // Also update the clockInEmployee state to maintain consistency
-        setClockInEmployee(employeeId)
-      }
-      
-      // For non-admin users, get their own employee ID
-      if (!isAdmin) {
-        const employeeResponse = await fetch('/api/employees?limit=100&isActive=true')
-        if (!employeeResponse.ok) throw new Error('Failed to get employee info')
-        const employeeData = await employeeResponse.json()
-        const currentEmployee = employeeData.employees.find((emp: Employee) => 
-          emp.user?.id === session.user.id
-        )
-        if (!currentEmployee) throw new Error('Employee record not found')
-        employeeId = currentEmployee.id
-        console.log('Using personal employee ID:', employeeId)
-      }
-
-      if (!employeeId) {
-        toast({
-          title: "Error",
-          description: isAdmin ? "Please select an employee" : "Employee record not found",
-          variant: "destructive",
-        })
-        return
-      }
-
-      const response = await fetch('/api/attendance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type,
-          employeeId,
-        }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || `Failed to clock ${type.toLowerCase()}`)
-      }
-
-      const getSuccessMessage = () => {
-        switch (type) {
-          case 'IN': return 'Successfully clocked in'
-          case 'OUT': return 'Successfully clocked out'
-          case 'BREAK_OUT': return 'Successfully went on break'
-          case 'BREAK_IN': return 'Successfully returned from break'
-          default: return 'Action completed successfully'
-        }
-      }
-
-      toast({
-        title: "Success",
-        description: getSuccessMessage(),
-      })
-
-      // Fetch attendance records to refresh the table
-      await fetchAttendanceRecords()
-      
-      // Also refresh the current employee's today record for button states
-      if (employeeId) {
-        // Ensure clockInEmployee is set for future operations
-        if (isAdmin && clockInEmployee !== employeeId) {
-          console.log('Setting clockInEmployee to:', employeeId)
-          setClockInEmployee(employeeId)
-        }
-        
-        const updatedRecord = await fetchTodayAttendance(employeeId)
-        setTodayAttendanceRecord(updatedRecord)
-        
-        if (updatedRecord) {
-          // Update the attendance records state with the new record
-          setAttendanceRecords(prev => {
-            const filtered = prev.filter(record => record.id !== updatedRecord.id)
-            return [updatedRecord, ...filtered]
-          })
-        }
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : 'An error occurred',
-        variant: "destructive",
-      })
-    } finally {
-      setClockLoading(false)
     }
   }
 
@@ -606,80 +426,122 @@ export default function AttendancePage() {
     )
   }
 
-  const getTodayAttendance = () => {
-    const today = new Date().toISOString().split('T')[0]
-    
-    console.log('getTodayAttendance called:', {
-      today,
-      clockInEmployee,
-      todayAttendanceRecord: todayAttendanceRecord ? 'exists' : 'null',
-      isEmployee,
-      attendanceRecordsCount: attendanceRecords.length
-    })
-    
-    // Priority 1: Use dedicated today record if it exists and matches selected employee
-    if (todayAttendanceRecord && clockInEmployee) {
-      const recordDate = new Date(todayAttendanceRecord.date).toISOString().split('T')[0]
-      if (recordDate === today && todayAttendanceRecord.employee?.id === clockInEmployee) {
-        console.log('Using dedicated today record with employee match')
-        return todayAttendanceRecord
-      }
-    }
-    
-    // Priority 2: Use dedicated today record even without employee match (for persistence)
-    if (todayAttendanceRecord) {
-      const recordDate = new Date(todayAttendanceRecord.date).toISOString().split('T')[0]
-      if (recordDate === today) {
-        console.log('Using dedicated today record without employee match')
-        return todayAttendanceRecord
-      }
-    }
-    
-    if (isEmployee) {
-      // For employees, find their own record
-      const record = attendanceRecords.find(record => 
-        record.date.split('T')[0] === today
-      )
-      console.log('Employee record found:', record ? 'exists' : 'null')
-      return record
-    }
-    
-    // For admins, if clockInEmployee is selected, find that employee's record
-    if (clockInEmployee) {
-      const record = attendanceRecords.find(record => 
-        record.date.split('T')[0] === today && 
-        record.employee.id === clockInEmployee
-      )
-      console.log('Admin record found for selected employee:', record ? 'exists' : 'null')
-      return record
-    }
-    
-    console.log('No employee selected and no dedicated record')
-    return null
+  const face1Src = (record: AttendanceRecord) =>
+    record.employee.faceSamples?.find((f) => f.slot === 1)?.imagePath
+
+  const toDatetimeLocalValue = (iso: string | null) => {
+    if (!iso) return ""
+    const d = new Date(iso)
+    const pad = (n: number) => String(n).padStart(2, "0")
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
   }
 
-  // Fetch today's attendance record specifically for clock in/out
-  const fetchTodayAttendance = async (employeeId: string) => {
+  const fromDatetimeLocalValue = (local: string): string | null => {
+    const t = local.trim()
+    if (!t) return null
+    const d = new Date(t)
+    if (Number.isNaN(d.getTime())) return null
+    return d.toISOString()
+  }
+
+  const openEdit = (record: AttendanceRecord) => {
+    setEditRecord(record)
+    setEditForm({
+      timeIn: toDatetimeLocalValue(record.timeIn),
+      timeOut: toDatetimeLocalValue(record.timeOut),
+      breakOut: toDatetimeLocalValue(record.breakOut ?? null),
+      breakIn: toDatetimeLocalValue(record.breakIn ?? null),
+      breakMinutes: record.breakMinutes != null ? String(record.breakMinutes) : "",
+      notes: record.notes ?? "",
+      status: record.status,
+    })
+    setEditOpen(true)
+  }
+
+  const saveEdit = async () => {
+    if (!editRecord) return
+    setEditSaving(true)
     try {
-      const today = new Date().toISOString().split('T')[0]
-      const url = `/api/attendance?employeeId=${employeeId}&startDate=${today}T00:00:00.000Z&endDate=${today}T23:59:59.999Z&limit=1`
-      
-      console.log('Fetching today attendance for employee:', employeeId)
-      const response = await fetch(url)
-      if (!response.ok) {
-        console.log('Response not ok:', response.status)
-        return null
+      const breakM = editForm.breakMinutes.trim()
+      const body: Record<string, unknown> = {
+        timeIn: fromDatetimeLocalValue(editForm.timeIn),
+        timeOut: fromDatetimeLocalValue(editForm.timeOut),
+        breakOut: fromDatetimeLocalValue(editForm.breakOut),
+        breakIn: fromDatetimeLocalValue(editForm.breakIn),
+        status: editForm.status,
+        notes: editForm.notes.trim() || null,
+        recalculateFromSchedule: true,
       }
-      
-      const data = await response.json()
-      console.log('Today attendance API response:', data)
-      const record = data.attendances?.[0] || null
-      console.log('Extracted record:', record)
-      return record
-    } catch (error) {
-      console.error('Error fetching today attendance:', error)
-      return null
+      if (breakM !== "") {
+        const n = parseInt(breakM, 10)
+        if (!Number.isNaN(n)) body.breakMinutes = n
+      }
+      const res = await fetch(`/api/attendance/${editRecord.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error((err as { error?: string }).error || "Update failed")
+      }
+      toast({ title: "Saved", description: "Attendance updated." })
+      setEditOpen(false)
+      setEditRecord(null)
+      await fetchAttendanceRecords()
+    } catch (e) {
+      toast({
+        title: "Error",
+        description: e instanceof Error ? e.message : "Failed to save",
+        variant: "destructive",
+      })
+    } finally {
+      setEditSaving(false)
     }
+  }
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return
+    setDeleteLoading(true)
+    try {
+      const res = await fetch(`/api/attendance/${deleteTarget.id}`, { method: "DELETE" })
+      if (!res.ok) throw new Error("Delete failed")
+      toast({ title: "Deleted", description: "Attendance record removed." })
+      setDeleteTarget(null)
+      await fetchAttendanceRecords()
+    } catch {
+      toast({ title: "Error", description: "Failed to delete record", variant: "destructive" })
+    } finally {
+      setDeleteLoading(false)
+    }
+  }
+
+  const scheduleTimeCell = (record: AttendanceRecord) => {
+    const oldFmt = formatScheduleSnapshot12h(record.oldScheduleTime ?? null)
+    const newFmt =
+      formatScheduleSnapshot12h(record.newScheduleTime ?? null) ||
+      formatScheduleSnapshot12h(
+        record.employee.schedule?.timeIn && record.employee.schedule?.timeOut
+          ? `${record.employee.schedule.timeIn} – ${record.employee.schedule.timeOut}`
+          : null,
+      )
+    const current = newFmt || null
+    const previous = oldFmt || null
+    if (previous && current && previous !== current) {
+      return (
+        <div className="text-xs space-y-0.5 max-w-[220px]">
+          <div>
+            <span className="text-muted-foreground">Was: </span>
+            {previous}
+          </div>
+          <div>
+            <span className="text-muted-foreground">Now: </span>
+            {current}
+          </div>
+        </div>
+      )
+    }
+    return <span className="text-sm">{current || previous || "—"}</span>
   }
 
   if (loading) {
@@ -747,181 +609,9 @@ export default function AttendancePage() {
           </div>
         </div>
 
-        {/* Clock In/Out Section - Admin Only */}
-        {isAdmin && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5" />
-                Time Clock
-              </CardTitle>
-              <CardDescription>
-                Clock in and out for the day
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div>
-                <Label htmlFor="employee-select">Select Employee for Clock In/Out</Label>
-                <Select 
-                    value={clockInEmployee} 
-                    onValueChange={(value) => {
-                      console.log('Employee selected:', value)
-                      console.log('Available employees:', employees.length)
-                      setClockInEmployee(value)
-                      
-                      // Immediately fetch today's record for this employee
-                      if (value) {
-                        fetchTodayAttendance(value).then((record) => {
-                          console.log('Immediately setting today record for:', value, record)
-                          setTodayAttendanceRecord(record)
-                        })
-                      }
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={employeesLoading ? "Loading employees..." : "Choose an employee"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {employeesLoading ? (
-                        <SelectItem value="loading" disabled>Loading employees...</SelectItem>
-                      ) : employees.length === 0 ? (
-                        <SelectItem value="no-employees" disabled>No active employees found</SelectItem>
-                      ) : (
-                        employees.map((employee) => (
-                          <SelectItem key={employee.id} value={employee.id}>
-                            {employee.firstName} {employee.lastName} ({employee.employeeId})
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-              {isAdmin && (clockInEmployee || todayAttendanceRecord) && (
-                <div className="p-3 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
-                  <p className="text-sm text-blue-700 dark:text-blue-300">
-                    <strong>Selected Employee:</strong> {
-                      clockInEmployee ? 
-                        `${employees.find(emp => emp.id === clockInEmployee)?.firstName} ${employees.find(emp => emp.id === clockInEmployee)?.lastName} (${employees.find(emp => emp.id === clockInEmployee)?.employeeId})` :
-                        todayAttendanceRecord?.employee ? 
-                          `${todayAttendanceRecord.employee.firstName} ${todayAttendanceRecord.employee.lastName} (${todayAttendanceRecord.employee.employeeId})` :
-                          'Unknown Employee'
-                    }
-                  </p>
-                  {(todayAttendanceRecord || getTodayAttendance()) && (
-                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                      Status: {(todayAttendanceRecord || getTodayAttendance())?.timeIn ? 'Clocked In' : 'Not Clocked In'} 
-                      {(todayAttendanceRecord || getTodayAttendance())?.timeOut && ' → Clocked Out'}
-                    </p>
-                  )}
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                    💡 Tip: Select the employee who needs to clock in/out
-                  </p>
-                </div>
-              )}
-
-              <div className="grid grid-cols-4 gap-2">
-                {/* Clock In Button */}
-                <Button
-                  onClick={() => handleClockInOut('IN')}
-                  disabled={
-                    clockLoading || 
-                    (isAdmin && !clockInEmployee) ||
-                    (!isAdmin && !isEmployee && !isDepartmentHead)
-                  }
-                  className="col-span-1"
-                  variant={getTodayAttendance()?.timeIn ? "outline" : "default"}
-                >
-                  <CheckCircle className="mr-2 h-4 w-4" />
-                  {getTodayAttendance()?.timeIn ? "Clocked In" : "Clock In"}
-                </Button>
-
-                {/* Break Out Button */}
-                <Button
-                  onClick={() => handleClockInOut('BREAK_OUT')}
-                  disabled={
-                    clockLoading || 
-                    (isAdmin && !clockInEmployee) ||
-                    (!isAdmin && !isEmployee && !isDepartmentHead)
-                  }
-                  className="col-span-1"
-                  variant={getTodayAttendance()?.breakOut ? "outline" : "secondary"}
-                >
-                  <Coffee className="mr-2 h-4 w-4" />
-                  {getTodayAttendance()?.breakOut ? "On Break" : "Break Out"}
-                </Button>
-
-                {/* Break In Button */}
-                <Button
-                  onClick={() => handleClockInOut('BREAK_IN')}
-                  disabled={
-                    clockLoading || 
-                    (isAdmin && !clockInEmployee) ||
-                    (!isAdmin && !isEmployee && !isDepartmentHead)
-                  }
-                  className="col-span-1"
-                  variant={getTodayAttendance()?.breakIn ? "outline" : "secondary"}
-                >
-                  <ArrowRight className="mr-2 h-4 w-4" />
-                  {getTodayAttendance()?.breakIn ? "Back" : "Break In"}
-                </Button>
-
-                {/* Clock Out Button */}
-                <Button
-                  onClick={() => handleClockInOut('OUT')}
-                  disabled={
-                    clockLoading || 
-                    (isAdmin && !clockInEmployee) ||
-                    (!isAdmin && !isEmployee && !isDepartmentHead)
-                  }
-                  className="col-span-1"
-                  variant={getTodayAttendance()?.timeOut ? "outline" : "default"}
-                >
-                  <XCircle className="mr-2 h-4 w-4" />
-                  {getTodayAttendance()?.timeOut ? "Clocked Out" : "Clock Out"}
-                </Button>
-              </div>
-
-              {getTodayAttendance() && (
-                <div className="p-4 bg-muted rounded-lg">
-                  <h4 className="font-medium mb-2">Today's Status</h4>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <span className="text-muted-foreground">Time In:</span>
-                      <div className="font-medium">{formatTime(getTodayAttendance()?.timeIn)}</div>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Time Out:</span>
-                      <div className="font-medium">{formatTime(getTodayAttendance()?.timeOut)}</div>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Break Out:</span>
-                      <div className="font-medium">{formatTime(getTodayAttendance()?.breakOut)}</div>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Break In:</span>
-                      <div className="font-medium">{formatTime(getTodayAttendance()?.breakIn)}</div>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Status:</span>
-                      <div>{getStatusBadge(getTodayAttendance()?.status)}</div>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground">Late:</span>
-                      <div className="font-medium">{formatDuration(getTodayAttendance()?.lateMinutes)}</div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-        )}
-
         {/* Quick Stats - Admin Only */}
           {isAdmin && (
-            <>
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
             <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium flex items-center gap-2">
@@ -1013,7 +703,7 @@ export default function AttendancePage() {
               </div>
             </CardContent>
           </Card>
-            </>
+            </div>
           )}
 
         {/* Filters - Admin Only */}
@@ -1173,6 +863,7 @@ export default function AttendancePage() {
                       )}
                     </div>
                   </TableHead>
+                  <TableHead>Schedule time</TableHead>
                   <TableHead 
                     className="cursor-pointer hover:bg-muted/50 select-none"
                     onClick={() => handleSort('timeIn')}
@@ -1188,7 +879,6 @@ export default function AttendancePage() {
                   </TableHead>
                   <TableHead>Break Out</TableHead>
                   <TableHead>Break In</TableHead>
-                  <TableHead>Midbreak</TableHead>
                   <TableHead 
                     className="cursor-pointer hover:bg-muted/50 select-none"
                     onClick={() => handleSort('timeOut')}
@@ -1215,6 +905,7 @@ export default function AttendancePage() {
                       )}
                     </div>
                   </TableHead>
+                  <TableHead>Midbreak</TableHead>
                   <TableHead 
                     className="cursor-pointer hover:bg-muted/50 select-none"
                     onClick={() => handleSort('lateMinutes')}
@@ -1255,213 +946,35 @@ export default function AttendancePage() {
                     </div>
                   </TableHead>
                   <TableHead>Total Hours</TableHead>
+                  {isAdmin && <TableHead className="text-right w-[100px]">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {attendanceRecords.map((record) => {
-                  // Get employee's schedule for the day
-                  const employeeSchedule = schedules.find(s => {
-                    const hasEmployee = s.employees.some((emp: any) => emp.id === record.employee.id)
-                    const workingDaysArray = s.workingDays ? s.workingDays.split(',') : []
-                    
-                    // Convert day number to day name for comparison
-                    const dayNames = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']
-                    const currentDay = new Date(record.date).getDay()
-                    const currentDayName = dayNames[currentDay]
-                    const isWorkingDay = workingDaysArray.includes(currentDayName)
-                    
-                    console.log('Schedule lookup debug:', {
-                      scheduleName: s.name,
-                      hasEmployee,
-                      workingDaysArray,
-                      currentDay,
-                      currentDayName,
-                      isWorkingDay,
-                      employeeId: record.employee.id
-                    })
-                    
-                    return hasEmployee && isWorkingDay
-                  })
-
-                  // Calculate total worked minutes based on schedule
-                  let totalMinutes = 0
-                  let overtimeMinutes = 0
-                  let lateMinutes = 0
-                  let undertimeMinutes = 0
-                  
-                  // FORCE CALCULATION - Always calculate 1 minute for testing
-                  console.log('RECORD DATA:', {
-                    recordId: record.id,
+                  const m = computeAttendanceDisplayMetrics({
+                    date: record.date,
                     timeIn: record.timeIn,
                     timeOut: record.timeOut,
-                    hasTimeIn: !!record.timeIn,
-                    hasTimeOut: !!record.timeOut
+                    breakOut: record.breakOut,
+                    breakIn: record.breakIn,
+                    breakMinutes: record.breakMinutes,
+                    lateMinutes: record.lateMinutes,
+                    overtimeMinutes: record.overtimeMinutes,
+                    undertimeMinutes: record.undertimeMinutes,
+                    status: record.status,
+                    oldScheduleTime: record.oldScheduleTime,
+                    newScheduleTime: record.newScheduleTime,
+                    employee: record.employee,
                   })
-                  
-                  // ALWAYS SET TO 1 - No conditions
-                  totalMinutes = 1
-                  console.log('ALWAYS SET: totalMinutes = 1 (no conditions)')
-
-                  // Always calculate total hours if we have timeIn and timeOut
-                  console.log('Checking timeIn and timeOut:', {
-                    hasTimeIn: !!record.timeIn,
-                    hasTimeOut: !!record.timeOut,
-                    timeIn: record.timeIn,
-                    timeOut: record.timeOut
-                  })
-                  
-                  if (record.timeIn && record.timeOut) {
-                    const actualStart = new Date(record.timeIn)
-                    const actualEnd = new Date(record.timeOut)
-                    
-                    console.log('Starting calculation for record:', {
-                      recordId: record.id,
-                      employeeId: record.employee.id,
-                      timeIn: record.timeIn,
-                      timeOut: record.timeOut,
-                      actualStart: actualStart.toISOString(),
-                      actualEnd: actualEnd.toISOString(),
-                      availableSchedules: schedules.length,
-                      scheduleNames: schedules.map(s => s.name)
-                    })
-                    
-                    // Calculate actual work time first
-                    const grossWorkMinutes = Math.floor((actualEnd.getTime() - actualStart.getTime()) / (1000 * 60))
-                    const breakMinutes = record.breakMinutes || 0
-                    
-                    // Apply 30-minute break rule: only deduct break time if it exceeds 30 minutes
-                    const deductibleBreakMinutes = breakMinutes > 30 ? breakMinutes - 30 : 0
-                    totalMinutes = Math.max(0, grossWorkMinutes - deductibleBreakMinutes)
-                    
-                    console.log('Basic calculation result:', {
-                      grossWorkMinutes,
-                      breakMinutes,
-                      deductibleBreakMinutes,
-                      totalMinutes
-                    })
-                    
-                    if (employeeSchedule) {
-                      // Parse schedule times
-                      const [scheduleStartHour, scheduleStartMin] = employeeSchedule.timeIn.split(':').map(Number)
-                      const [scheduleEndHour, scheduleEndMin] = employeeSchedule.timeOut.split(':').map(Number)
-                      
-                      // Create schedule start and end times for the day
-                      const scheduleStart = new Date(record.date)
-                      scheduleStart.setHours(scheduleStartHour, scheduleStartMin, 0, 0)
-                      
-                      const scheduleEnd = new Date(record.date)
-                      scheduleEnd.setHours(scheduleEndHour, scheduleEndMin, 0, 0)
-                      
-                      // Calculate total credited hours (schedule duration)
-                      const scheduleMinutes = Math.floor((scheduleEnd.getTime() - scheduleStart.getTime()) / (1000 * 60))
-                      
-                      // Calculate late arrival
-                      if (actualStart > scheduleStart) {
-                        lateMinutes = Math.floor((actualStart.getTime() - scheduleStart.getTime()) / (1000 * 60))
-                      }
-                      
-                      // Calculate overtime (work beyond schedule end)
-                      if (actualEnd > scheduleEnd) {
-                        overtimeMinutes = Math.floor((actualEnd.getTime() - scheduleEnd.getTime()) / (1000 * 60))
-                      }
-                      
-                      // Calculate undertime (work less than schedule duration)
-                      const actualWorkMinutes = Math.floor((actualEnd.getTime() - actualStart.getTime()) / (1000 * 60))
-                      if (actualWorkMinutes < scheduleMinutes) {
-                        undertimeMinutes = scheduleMinutes - actualWorkMinutes
-                      }
-                      
-                      // Total credited hours = actual work time (not schedule duration)
-                      const grossWorkMinutes = Math.floor((actualEnd.getTime() - actualStart.getTime()) / (1000 * 60))
-                      const breakMinutes = record.breakMinutes || 0
-                      
-                      // Apply 30-minute break rule: only deduct break time if it exceeds 30 minutes
-                      const deductibleBreakMinutes = breakMinutes > 30 ? breakMinutes - 30 : 0
-                      totalMinutes = Math.max(0, grossWorkMinutes - deductibleBreakMinutes)
-                      
-                      console.log('Total hours calculation debug (with schedule):', {
-                        employeeId: record.employee.id,
-                        scheduleName: employeeSchedule.name,
-                        scheduleTimeIn: employeeSchedule.timeIn,
-                        scheduleTimeOut: employeeSchedule.timeOut,
-                        scheduleMinutes,
-                        grossWorkMinutes,
-                        breakMinutes,
-                        deductibleBreakMinutes,
-                        totalMinutes,
-                        lateMinutes,
-                        overtimeMinutes,
-                        undertimeMinutes
-                      })
-                    } else {
-                      // No schedule found - use actual work time as total hours
-                      const grossWorkMinutes = Math.floor((actualEnd.getTime() - actualStart.getTime()) / (1000 * 60))
-                      const breakMinutes = record.breakMinutes || 0
-                      
-                      // Apply 30-minute break rule: only deduct break time if it exceeds 30 minutes
-                      const deductibleBreakMinutes = breakMinutes > 30 ? breakMinutes - 30 : 0
-                      totalMinutes = Math.max(0, grossWorkMinutes - deductibleBreakMinutes)
-                      
-                      console.log('Total hours calculation debug (no schedule):', {
-                        employeeId: record.employee.id,
-                        grossWorkMinutes,
-                        breakMinutes,
-                        deductibleBreakMinutes,
-                        totalMinutes,
-                        actualStart: actualStart.toISOString(),
-                        actualEnd: actualEnd.toISOString(),
-                        availableSchedules: schedules.length,
-                        scheduleDetails: schedules.map(s => ({
-                          id: s.id,
-                          name: s.name,
-                          timeIn: s.timeIn,
-                          timeOut: s.timeOut,
-                          workingDays: s.workingDays,
-                          employees: s.employees.map((emp: any) => emp.id)
-                        }))
-                      })
-                    }
-                  } else {
-                    console.log('Missing data for calculation:', {
-                      hasTimeIn: !!record.timeIn,
-                      hasTimeOut: !!record.timeOut,
-                      hasSchedule: !!employeeSchedule,
-                      employeeId: record.employee.id
-                    })
-                    
-                    // FALLBACK: Try to calculate even with missing data
-                    if (record.timeIn && record.timeOut) {
-                      const actualStart = new Date(record.timeIn)
-                      const actualEnd = new Date(record.timeOut)
-                      const grossWorkMinutes = Math.floor((actualEnd.getTime() - actualStart.getTime()) / (1000 * 60))
-                      totalMinutes = Math.max(0, grossWorkMinutes)
-                      console.log('Fallback calculation:', { grossWorkMinutes, totalMinutes })
-                    }
-                  }
-
-                  console.log('Final calculation result for record:', {
-                    recordId: record.id,
-                    totalMinutes,
-                    lateMinutes,
-                    overtimeMinutes,
-                    undertimeMinutes,
-                    willShowTotalHours: totalMinutes > 0
-                  })
-                  
-                  // FINAL DEBUG - Right before display
-                  console.log('RIGHT BEFORE DISPLAY:', {
-                    totalMinutes,
-                    condition: totalMinutes > 0,
-                    willShow: totalMinutes > 0 ? 'formatDuration' : 'dash'
-                  })
-
                   return (
                     <TableRow key={record.id}>
                       <TableCell>
                         <div className="flex items-center space-x-3">
                           <Avatar className="h-8 w-8">
+                            <AvatarImage src={face1Src(record)} />
                             <AvatarFallback>
-                              {record.employee.firstName[0]}{record.employee.lastName[0]}
+                              {record.employee.firstName[0]}
+                              {record.employee.lastName[0]}
                             </AvatarFallback>
                           </Avatar>
                           <div>
@@ -1474,70 +987,94 @@ export default function AttendancePage() {
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        {new Date(record.date).toLocaleDateString()}
+                      <TableCell className="font-mono text-sm">
+                        {formatAttendanceTableDate(record.date)}
                       </TableCell>
+                      <TableCell className="max-w-[220px]">{scheduleTimeCell(record)}</TableCell>
                       <TableCell>{formatTime(record.timeIn)}</TableCell>
                       <TableCell>{formatTime(record.breakOut || null)}</TableCell>
                       <TableCell>{formatTime(record.breakIn || null)}</TableCell>
-                      <TableCell>
-                        {record.breakMinutes && record.breakMinutes > 0 ? (
-                          <span className="text-purple-600 font-medium">
-                            {formatDuration(record.breakMinutes)}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
                       <TableCell>{formatTime(record.timeOut)}</TableCell>
                       <TableCell>{getStatusBadge(record.status)}</TableCell>
                       <TableCell>
-                        {lateMinutes > 0 ? (
+                        {m.midbreakMin > 0 ? (
+                          <span className="text-purple-600 font-medium">
+                            {formatDuration(m.midbreakMin)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {m.lateMin > 0 ? (
                           <span className="text-orange-600 font-medium">
-                            {formatDuration(lateMinutes)}
+                            {formatDuration(m.lateMin)}
                           </span>
                         ) : (
-                          <span className="text-muted-foreground">-</span>
+                          <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
                       <TableCell>
-                        {overtimeMinutes > 0 ? (
+                        {m.otMin > 0 ? (
                           <span className="text-blue-600 font-medium">
-                            {formatDuration(overtimeMinutes)}
+                            {formatDuration(m.otMin)}
                           </span>
                         ) : (
-                          <span className="text-muted-foreground">-</span>
+                          <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
                       <TableCell>
-                        {undertimeMinutes > 0 ? (
+                        {m.utMin > 0 ? (
                           <span className="text-red-600 font-medium">
-                            {formatDuration(undertimeMinutes)}
+                            {formatDuration(m.utMin)}
                           </span>
                         ) : (
-                          <span className="text-muted-foreground">-</span>
+                          <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
                       <TableCell>
-                        {totalMinutes > 0 ? (
-                          <span className="font-medium">
-                            {formatDuration(totalMinutes)}
-                          </span>
+                        {m.totalWorkMin > 0 ? (
+                          <span className="font-medium">{formatDuration(m.totalWorkMin)}</span>
                         ) : (
-                          <span className="text-muted-foreground">
-                            - (totalMinutes: {totalMinutes})
-                          </span>
+                          <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
+                      {isAdmin && (
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8"
+                              onClick={() => openEdit(record)}
+                              aria-label="Edit attendance"
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-destructive hover:text-destructive"
+                              onClick={() => setDeleteTarget(record)}
+                              aria-label="Delete attendance"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      )}
                     </TableRow>
                   )
                 })}
                 {attendanceRecords.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center py-8">
-                      <div className="text-muted-foreground">
-                        No attendance records found.
-                      </div>
+                    <TableCell
+                      colSpan={isAdmin ? 14 : 13}
+                      className="text-center py-8"
+                    >
+                      <div className="text-muted-foreground">No attendance records found.</div>
                     </TableCell>
                   </TableRow>
                 )}
@@ -1554,18 +1091,120 @@ export default function AttendancePage() {
           </CardContent>
         </Card>
 
-        {/* Confirmation Dialog */}
+        <Dialog open={editOpen} onOpenChange={setEditOpen}>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit attendance</DialogTitle>
+            </DialogHeader>
+            {editRecord && (
+              <div className="grid gap-4 py-2">
+                <p className="text-sm text-muted-foreground">
+                  {editRecord.employee.firstName} {editRecord.employee.lastName} ·{" "}
+                  {formatAttendanceTableDate(editRecord.date)}
+                </p>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-timeIn">Time in</Label>
+                  <Input
+                    id="edit-timeIn"
+                    type="datetime-local"
+                    value={editForm.timeIn}
+                    onChange={(e) => setEditForm((f) => ({ ...f, timeIn: e.target.value }))}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-timeOut">Time out</Label>
+                  <Input
+                    id="edit-timeOut"
+                    type="datetime-local"
+                    value={editForm.timeOut}
+                    onChange={(e) => setEditForm((f) => ({ ...f, timeOut: e.target.value }))}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-breakOut">Break out</Label>
+                  <Input
+                    id="edit-breakOut"
+                    type="datetime-local"
+                    value={editForm.breakOut}
+                    onChange={(e) => setEditForm((f) => ({ ...f, breakOut: e.target.value }))}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-breakIn">Break in</Label>
+                  <Input
+                    id="edit-breakIn"
+                    type="datetime-local"
+                    value={editForm.breakIn}
+                    onChange={(e) => setEditForm((f) => ({ ...f, breakIn: e.target.value }))}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-breakMinutes">Break minutes (midbreak total)</Label>
+                  <Input
+                    id="edit-breakMinutes"
+                    type="number"
+                    min={0}
+                    value={editForm.breakMinutes}
+                    onChange={(e) => setEditForm((f) => ({ ...f, breakMinutes: e.target.value }))}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Status</Label>
+                  <Select
+                    value={editForm.status}
+                    onValueChange={(v) =>
+                      setEditForm((f) => ({ ...f, status: v as AttendanceRecord["status"] }))
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="PRESENT">Present</SelectItem>
+                      <SelectItem value="LATE">Late</SelectItem>
+                      <SelectItem value="ABSENT">Absent</SelectItem>
+                      <SelectItem value="OVERTIME">Overtime</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="edit-notes">Notes</Label>
+                  <Textarea
+                    id="edit-notes"
+                    value={editForm.notes}
+                    onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))}
+                    rows={3}
+                  />
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={saveEdit} disabled={editSaving}>
+                {editSaving ? "Saving…" : "Save"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         <ConfirmationDialog
-          open={confirmDialog.open}
-          onOpenChange={(open) => setConfirmDialog(prev => ({ ...prev, open }))}
-          title={confirmDialog.title}
-          description={confirmDialog.description}
-          confirmText="Confirm"
-          onConfirm={() => {
-            confirmDialog.action()
-            setConfirmDialog(prev => ({ ...prev, open: false }))
+          open={!!deleteTarget}
+          onOpenChange={(o) => {
+            if (!o) setDeleteTarget(null)
           }}
+          title="Delete attendance?"
+          description={
+            deleteTarget
+              ? `Remove record for ${deleteTarget.employee.firstName} ${deleteTarget.employee.lastName} on ${formatAttendanceTableDate(deleteTarget.date)}?`
+              : ""
+          }
+          confirmText={deleteLoading ? "Deleting…" : "Delete"}
+          variant="destructive"
+          onConfirm={confirmDelete}
         />
+
       </div>
     </DashboardLayout>
   )

@@ -3,9 +3,15 @@ import { NextResponse } from "next/server"
 
 export default withAuth(
   function middleware(req) {
+    const pathname = req.nextUrl.pathname
+    // Face kiosk: static models + uploaded face images must load without session (no HTML redirect).
+    if (pathname.startsWith("/models/") || pathname.startsWith("/uploads/")) {
+      return NextResponse.next()
+    }
+
     const token = req.nextauth.token
     const isAuth = !!token
-    const isAuthPage = req.nextUrl.pathname.startsWith("/auth")
+    const isAuthPage = pathname.startsWith("/auth")
 
     // If user is on auth page and already authenticated, redirect to dashboard
     if (isAuthPage && isAuth) {
@@ -73,14 +79,19 @@ export default withAuth(
   {
     callbacks: {
       authorized: ({ token, req }) => {
+        const p = req.nextUrl.pathname
         // Allow access to auth pages without token
-        if (req.nextUrl.pathname.startsWith("/auth")) {
+        if (p.startsWith("/auth")) {
+          return true
+        }
+        // Public static assets for face-api + enrollment photos
+        if (p.startsWith("/models/") || p.startsWith("/uploads/")) {
           return true
         }
         // Allow access to attendance kiosk endpoints without token (public endpoints)
         if (
-          req.nextUrl.pathname.startsWith("/api/attendance/qr-scan") ||
-          req.nextUrl.pathname.startsWith("/api/attendance/enrolled-faces")
+          p.startsWith("/api/attendance/qr-scan") ||
+          p.startsWith("/api/attendance/enrolled-faces")
         ) {
           return true
         }
@@ -98,12 +109,14 @@ export const config = {
      * - api/auth (NextAuth API routes)
      * - api/attendance/qr-scan (Public attendance scan endpoint)
      * - api/attendance/enrolled-faces (Public enrolled faces endpoint)
+     * - models/ (face-api weights in public/models)
+     * - uploads/ (face enrollment images in public/uploads)
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
      * - static files (images, etc.)
      */
-    "/((?!api/auth|api/attendance/qr-scan|api/attendance/enrolled-faces|_next/static|_next/image|favicon.ico|logo.png|trop.jpg|placeholder).*)",
+    "/((?!api/auth|api/attendance/qr-scan|api/attendance/enrolled-faces|models/|uploads/|_next/static|_next/image|favicon.ico|logo.png|GWB.png|trop.jpg|placeholder).*)",
   ],
 }
 

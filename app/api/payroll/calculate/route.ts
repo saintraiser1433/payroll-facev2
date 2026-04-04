@@ -4,6 +4,8 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import { calculatePhilippineTax } from '@/lib/philippine-tax'
+import { creditedOvertimeMinutesForDay } from '@/lib/payroll-overtime'
+import { getOrCreateDeductionType } from '@/lib/payroll-deduction-types'
 
 const calculatePayrollSchema = z.object({
   payrollPeriodId: z.string().min(1, 'Payroll period ID is required'),
@@ -61,13 +63,11 @@ export async function POST(request: NextRequest) {
         },
         cashAdvances: {
           where: {
-            dateIssued: {
-              gte: payrollPeriod.startDate,
-              lte: payrollPeriod.endDate
-            },
             status: 'APPROVED',
-            isPaid: false
-          }
+            isPaid: false,
+            OR: [{ remainingBalance: { gt: 0 } }, { remainingBalance: null }],
+          },
+          orderBy: { approvedAt: 'asc' },
         },
         overtimeRequests: {
           where: {
@@ -100,7 +100,12 @@ export async function POST(request: NextRequest) {
       }
     })
 
-    // Get deduction types
+    // Get deduction types (ensure standard rows exist for payroll lines)
+    const [tardyDeductionType, undertimeDeductionType, cashAdvanceDeductionType] = await Promise.all([
+      getOrCreateDeductionType('Tardy', 'Late / tardiness'),
+      getOrCreateDeductionType('Undertime', 'Undertime'),
+      getOrCreateDeductionType('Cash advance', 'Cash advance repayment'),
+    ])
     const deductionTypes = await prisma.deductionType.findMany()
 
     // Get holidays for the payroll period
@@ -284,6 +289,8 @@ export async function POST(request: NextRequest) {
       let lateMinutes = 0
       let undertimeMinutes = 0
       let timeAdjustments = 0
+      let tardyPhp = 0
+      let undertimePhp = 0
       // totalEarnings already declared above
 
       if (employee.salaryType === 'MONTHLY') {
@@ -357,50 +364,43 @@ export async function POST(request: NextRequest) {
         let totalLateMinutes = 0
         let totalUndertimeMinutes = 0
         let totalOvertimeHours = 0
-        
+
+        const otApproved = (employee.overtimeRequests || []).map((req: { requestDate: Date; approvedMinutes: number }) => ({
+          requestDate: req.requestDate,
+          approvedMinutes: req.approvedMinutes || 0,
+        }))
+
         for (const attendance of employee.attendances) {
           if (attendance.timeIn && attendance.timeOut && employee.schedule) {
-            // Calculate late minutes (from schedule time in)
             if (attendance.lateMinutes > 0) {
               totalLateMinutes += attendance.lateMinutes
             }
-            
-            // Calculate undertime minutes (from schedule time out)
             if (attendance.undertimeMinutes > 0) {
               totalUndertimeMinutes += attendance.undertimeMinutes
             }
-            
-            // Calculate overtime hours
-            if (attendance.overtimeMinutes > 0) {
-              totalOvertimeHours += attendance.overtimeMinutes / 60
-            }
+            const creditedOt = creditedOvertimeMinutesForDay(
+              new Date(attendance.date),
+              attendance.overtimeMinutes || 0,
+              otApproved,
+            )
+            totalOvertimeHours += creditedOt / 60
           }
         }
 
-        // Add overtime minutes approved by Dept Head (covers requested OT not captured by attendance).
-        const approvedOvertimeMinutes = (employee.overtimeRequests || []).reduce(
-          (sum: number, req: any) => sum + (req.approvedMinutes || 0),
-          0
-        )
-        totalOvertimeHours += approvedOvertimeMinutes / 60
-        
-        // Calculate time adjustments (late + undertime deductions)
-        // For monthly employees: Deduct from basic pay based on tardy/undertime
-        // Calculate day-by-day: For each day with adjustments, deduct proportional amount from daily rate
-        // Example: 30 minutes tardy in a 10-hour (600 min) day = (30/600) * dailyRate = deduction for that day
-        timeAdjustments = 0
-        
-        // Sum up deductions day by day
-        // For each day with adjustments, calculate (adjustmentMinutes / scheduleDurationMinutes) * dailyRate
+        // Tardy / undertime as peso amounts (stored as payroll deductions; gross pay excludes these)
+        tardyPhp = 0
+        undertimePhp = 0
         for (const attendance of employee.attendances) {
           if (attendance.timeIn && attendance.timeOut && employee.schedule) {
-            const dayAdjustmentMinutes = (attendance.lateMinutes || 0) + (attendance.undertimeMinutes || 0)
-            if (dayAdjustmentMinutes > 0) {
-              const dayDeduction = (dayAdjustmentMinutes / scheduleDurationMinutes) * dailyRate
-              timeAdjustments += dayDeduction
+            if ((attendance.lateMinutes || 0) > 0) {
+              tardyPhp += ((attendance.lateMinutes || 0) / scheduleDurationMinutes) * dailyRate
+            }
+            if ((attendance.undertimeMinutes || 0) > 0) {
+              undertimePhp += ((attendance.undertimeMinutes || 0) / scheduleDurationMinutes) * dailyRate
             }
           }
         }
+        timeAdjustments = tardyPhp + undertimePhp
         
         // Calculate overtime pay
         overtimePay = totalOvertimeHours * hourlyRate * 1.5
@@ -434,9 +434,8 @@ export async function POST(request: NextRequest) {
         console.log(`- Overtime pay: ₱${overtimePay.toFixed(2)}`)
         console.log(`- Holiday pay: ₱${holidayPay.toFixed(2)}`)
         
-        // For monthly employees: Basic pay is fixed, then add overtime/holiday, then subtract tardy/undertime
-        // Gross Pay = Basic Pay + Overtime Pay + Holiday Pay - Time Adjustments (tardy + undertime)
-        totalEarnings = Math.max(0, basicPay + overtimePay + holidayPay - timeAdjustments - absentDeduction)
+        // Gross pay before tardy/undertime (those are separate deduction lines)
+        totalEarnings = Math.max(0, basicPay + overtimePay + holidayPay - absentDeduction)
       } else {
         // For daily workers, calculate total earnings normally
         totalEarnings = Math.max(0, basicPay + overtimePay - timeAdjustments)
@@ -448,6 +447,7 @@ export async function POST(request: NextRequest) {
       const safeHolidayPay = isNaN(holidayPay) ? 0 : holidayPay
       const safeThirteenthMonthPay = isNaN(thirteenthMonthPay) ? 0 : thirteenthMonthPay
       const safeTotalEarnings = isNaN(totalEarnings) ? 0 : totalEarnings
+      const taxableIncomeForWithholding = Math.max(0, safeTotalEarnings - tardyPhp - undertimePhp)
 
       // Log time adjustments for debugging
       if (timeAdjustments > 0) {
@@ -458,25 +458,32 @@ export async function POST(request: NextRequest) {
         console.log(`- Basic pay after adjustments: ₱${safeBasicPay.toFixed(2)}`)
       }
 
-      // Calculate cash advances total (always needed for reporting)
-      const cashAdvanceTotal = employee.cashAdvances.reduce(
-        (sum, advance) => sum + advance.amount,
-        0
-      )
+      // Cash advance collected this run (for reporting)
+      let cashAdvanceTotal = 0
+      const cashAdvanceRepayments: { id: string; newRemaining: number }[] = []
 
       // Calculate deductions - only if deductions are enabled for this period
       let totalDeductions = 0
-      const deductions = []
+      const deductions: { deductionTypeId: string; amount: number; benefitName?: string }[] = []
 
       if (payrollPeriod.deductionsEnabled) {
         console.log(`\n🔧 Deductions ENABLED for period "${payrollPeriod.name}" - applying all deductions`)
+
+        if (tardyPhp > 0) {
+          deductions.push({ deductionTypeId: tardyDeductionType.id, amount: tardyPhp })
+          totalDeductions += tardyPhp
+        }
+        if (undertimePhp > 0) {
+          deductions.push({ deductionTypeId: undertimeDeductionType.id, amount: undertimePhp })
+          totalDeductions += undertimePhp
+        }
         
-        // Apply Philippine Progressive Tax System
+        // Apply Philippine Progressive Tax System (on income after tardy/undertime, same as before)
         const withholdingTaxType = deductionTypes.find(dt => dt.name === "Withholding Tax")
         
         if (withholdingTaxType) {
           // Calculate progressive tax based on annual income
-          const taxCalculation = calculatePhilippineTax(safeTotalEarnings, employee.salaryType)
+          const taxCalculation = calculatePhilippineTax(taxableIncomeForWithholding, employee.salaryType)
           
           if (taxCalculation.monthlyTax > 0) {
             deductions.push({
@@ -561,8 +568,32 @@ export async function POST(request: NextRequest) {
         console.log(`- Final Benefit Deductions: ₱${benefitDeductions}`)
         console.log(`- Final Total Deductions: ₱${totalDeductions}`)
 
-        // Add cash advances as deductions
-        totalDeductions += cashAdvanceTotal
+        // Cash advances: deduct up to available net; unpaid portion stays for next payroll
+        let availableForCashAdvance = Math.max(0, totalEarnings - totalDeductions)
+        for (const advance of employee.cashAdvances) {
+          const remainingRaw = advance.remainingBalance ?? advance.amount
+          const remaining = Math.max(0, remainingRaw)
+          if (remaining <= 0) continue
+
+          const per =
+            advance.amountPerPeriod != null && advance.amountPerPeriod > 0
+              ? advance.amountPerPeriod
+              : remaining
+          const scheduled = Math.min(per, remaining)
+          const take = Math.min(scheduled, availableForCashAdvance)
+          if (take <= 0) continue
+
+          deductions.push({
+            deductionTypeId: cashAdvanceDeductionType.id,
+            amount: Math.round(take * 100) / 100,
+          })
+          totalDeductions += Math.round(take * 100) / 100
+          cashAdvanceTotal += Math.round(take * 100) / 100
+          availableForCashAdvance -= take
+
+          const newRemaining = Math.round((remaining - take) * 100) / 100
+          cashAdvanceRepayments.push({ id: advance.id, newRemaining })
+        }
       } else {
         console.log(`\n🚫 Deductions DISABLED for period "${payrollPeriod.name}" - skipping all deductions`)
         console.log(`- Total Earnings: ₱${totalEarnings}`)
@@ -623,28 +654,26 @@ export async function POST(request: NextRequest) {
       // Create deductions
       if (deductions.length > 0) {
         for (const deduction of deductions) {
-          // Create the deduction entry
           await prisma.payrollDeduction.create({
             data: {
               payrollItemId: payrollItem.id,
               deductionTypeId: deduction.deductionTypeId,
-              amount: deduction.amount
-            }
+              amount: deduction.amount,
+            },
           })
         }
       }
 
-      // Mark cash advances as paid - only if deductions are enabled
-      if (employee.cashAdvances.length > 0 && payrollPeriod.deductionsEnabled) {
-        await prisma.cashAdvance.updateMany({
-          where: {
-            id: { in: employee.cashAdvances.map(ca => ca.id) }
-          },
-          data: { isPaid: true }
-        })
-        console.log(`✅ Marked ${employee.cashAdvances.length} cash advances as paid for ${employee.firstName} ${employee.lastName}`)
-      } else if (employee.cashAdvances.length > 0 && !payrollPeriod.deductionsEnabled) {
-        console.log(`ℹ️  Cash advances not marked as paid - deductions disabled for period "${payrollPeriod.name}"`)
+      if (payrollPeriod.deductionsEnabled && cashAdvanceRepayments.length > 0) {
+        for (const r of cashAdvanceRepayments) {
+          await prisma.cashAdvance.update({
+            where: { id: r.id },
+            data: {
+              remainingBalance: r.newRemaining,
+              isPaid: r.newRemaining <= 0,
+            },
+          })
+        }
       }
 
       payrollItems.push({
