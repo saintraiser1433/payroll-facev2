@@ -16,6 +16,8 @@ import {
   handleSort,
   paginateData,
 } from "@/components/employee/employee-ui-helpers"
+import { mergeApprovedLeaveDayKeys, ymdFromAttendanceDate } from "@/lib/leave-dates"
+import { cn } from "@/lib/utils"
 
 const itemsPerPage = 10
 
@@ -33,19 +35,44 @@ export function MyAttendanceModule() {
       return { paginatedData: [] as any[], totalPages: 0, totalItems: 0 }
     }
 
-    const attendanceData = data.employee.attendances.map((record) => ({
-      id: record.id,
-      date: record.date,
-      timeIn: record.timeIn,
-      timeOut: record.timeOut,
-      status: record.status,
-      hours:
-        record.timeIn && record.timeOut
-          ? Math.round(
-              ((new Date(record.timeOut).getTime() - new Date(record.timeIn).getTime()) / (1000 * 60 * 60)) * 10,
-            ) / 10
-          : 0,
-    }))
+    const leaveDays = mergeApprovedLeaveDayKeys(data.employee.approvedLeaves ?? [])
+    const attendanceData: any[] = []
+    const seenYmd = new Set<string>()
+
+    for (const record of data.employee.attendances) {
+      const ymd = ymdFromAttendanceDate(record.date)
+      seenYmd.add(ymd)
+      const onLeave = leaveDays.has(ymd)
+      attendanceData.push({
+        id: record.id,
+        date: record.date,
+        timeIn: record.timeIn,
+        timeOut: record.timeOut,
+        status: onLeave ? "LEAVE" : record.status,
+        hours:
+          record.timeIn && record.timeOut
+            ? Math.round(
+                ((new Date(record.timeOut).getTime() - new Date(record.timeIn).getTime()) / (1000 * 60 * 60)) * 10,
+              ) / 10
+            : 0,
+        isLeaveDay: onLeave,
+      })
+    }
+
+    for (const ymd of leaveDays) {
+      if (seenYmd.has(ymd)) continue
+      attendanceData.push({
+        id: `leave-${ymd}`,
+        date: new Date(`${ymd}T12:00:00`).toISOString(),
+        timeIn: null,
+        timeOut: null,
+        status: "LEAVE",
+        hours: 0,
+        isLeaveDay: true,
+      })
+    }
+
+    attendanceData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
     let filteredAttendanceData = attendanceData
     if (attendanceStartDate || attendanceEndDate) {
@@ -250,7 +277,10 @@ export function MyAttendanceModule() {
               </TableHeader>
               <TableBody>
                 {getAttendancePaginationData().paginatedData.map((record) => (
-                  <TableRow key={record.id}>
+                  <TableRow
+                    key={record.id}
+                    className={cn(record.isLeaveDay && "bg-red-100 dark:bg-red-950/40")}
+                  >
                     <TableCell className="font-mono text-sm">{new Date(record.date).toLocaleDateString()}</TableCell>
                     <TableCell className="font-mono text-sm">{formatTime(record.timeIn)}</TableCell>
                     <TableCell className="font-mono text-sm">{formatTime(record.timeOut)}</TableCell>

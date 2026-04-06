@@ -11,7 +11,6 @@ const cashAdvanceCreateSchema = z
     reason: z.string().optional().nullable(),
     repaymentType: z.enum(["FULL", "INSTALLMENT"]),
     installmentCount: z.number().int().min(1).optional().nullable(),
-    interestRate: z.number().min(0).default(0),
   })
   .superRefine((data, ctx) => {
     if (data.repaymentType === "INSTALLMENT") {
@@ -40,7 +39,23 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const parsed = cashAdvanceCreateSchema.parse(body)
-    const { amount, dateIssued, reason, repaymentType, installmentCount, interestRate } = parsed
+    const { amount, dateIssued, reason, repaymentType, installmentCount } = parsed
+
+    const blocking = await prisma.cashAdvance.findFirst({
+      where: {
+        employeeId,
+        OR: [{ status: "PENDING" }, { status: "APPROVED", isPaid: false }],
+      },
+    })
+    if (blocking) {
+      return NextResponse.json(
+        {
+          error:
+            "You already have an active cash advance (pending approval or not fully repaid). Pay it off or wait until it is rejected before applying again.",
+        },
+        { status: 400 },
+      )
+    }
 
     await prisma.cashAdvancePolicy.upsert({
       where: { id: "default" },
@@ -60,6 +75,11 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       )
     }
+
+    const interestRate =
+      repaymentType === "FULL"
+        ? (policy?.fullPaymentInterestRate ?? 0)
+        : (policy?.installmentInterestRate ?? 0)
 
     const created = await prisma.cashAdvance.create({
       data: {

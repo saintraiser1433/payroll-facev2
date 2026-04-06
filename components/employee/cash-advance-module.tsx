@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Plus, MoreHorizontal, Eye } from "lucide-react"
 import { useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
@@ -47,6 +47,14 @@ type CashRow = {
   amount: number
   status: string
   reason?: string | null
+  repaymentType?: "FULL" | "INSTALLMENT"
+  installmentCount?: number | null
+  interestRate?: number | null
+  totalRepayable?: number | null
+  remainingBalance?: number | null
+  amountPerPeriod?: number | null
+  isPaid?: boolean
+  approvedAt?: string | null
 }
 
 export function CashAdvanceModule() {
@@ -64,12 +72,25 @@ export function CashAdvanceModule() {
   const [cashAdvanceReason, setCashAdvanceReason] = useState("")
   const [repaymentType, setRepaymentType] = useState<"FULL" | "INSTALLMENT">("FULL")
   const [installmentCount, setInstallmentCount] = useState(2)
-  const [interestRate, setInterestRate] = useState(0)
   const [policy, setPolicy] = useState({
     fullPaymentInterestRate: 0,
     installmentInterestRate: 0,
     installmentMaxPeriods: 12,
   })
+
+  const effectiveInterestRate = useMemo(
+    () =>
+      repaymentType === "FULL" ? policy.fullPaymentInterestRate : policy.installmentInterestRate,
+    [repaymentType, policy.fullPaymentInterestRate, policy.installmentInterestRate],
+  )
+
+  const hasBlockingCashAdvance = useMemo(
+    () =>
+      (cashAdvances as CashRow[]).some(
+        (ca) => ca.status === "PENDING" || (ca.status === "APPROVED" && !ca.isPaid),
+      ),
+    [cashAdvances],
+  )
 
   const userInitials =
     session?.user?.name
@@ -83,6 +104,8 @@ export function CashAdvanceModule() {
     setCashAdvanceAmount(0)
     setCashAdvanceReason("")
     setCashAdvanceDateIssued(new Date().toISOString().slice(0, 10))
+    setRepaymentType("FULL")
+    setInstallmentCount(2)
   }, [])
 
   const searchText = useCallback(
@@ -101,6 +124,25 @@ export function CashAdvanceModule() {
     fetchMyRequests()
   }, [fetchMyRequests])
 
+  useEffect(() => {
+    let cancelled = false
+    fetch("/api/cash-advance-policy")
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled || !data.policy) return
+        const p = data.policy
+        setPolicy({
+          fullPaymentInterestRate: p.fullPaymentInterestRate ?? 0,
+          installmentInterestRate: p.installmentInterestRate ?? 0,
+          installmentMaxPeriods: p.installmentMaxPeriods ?? 12,
+        })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const handleSubmitCashAdvance = async () => {
     try {
       if (!cashAdvanceAmount || cashAdvanceAmount <= 0) {
@@ -108,7 +150,6 @@ export function CashAdvanceModule() {
         return
       }
 
-      setSubmitting(true)
       if (repaymentType === "INSTALLMENT") {
         if (installmentCount < 2 || installmentCount > policy.installmentMaxPeriods) {
           toast({
@@ -120,6 +161,8 @@ export function CashAdvanceModule() {
         }
       }
 
+      setSubmitting(true)
+
       const res = await fetch("/api/cash-advances", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -129,7 +172,6 @@ export function CashAdvanceModule() {
           reason: cashAdvanceReason || null,
           repaymentType,
           installmentCount: repaymentType === "INSTALLMENT" ? installmentCount : null,
-          interestRate,
         }),
       })
 
@@ -158,8 +200,14 @@ export function CashAdvanceModule() {
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Cash advance</h1>
           <p className="text-muted-foreground mt-1">Apply for a cash advance through your department head</p>
+          {hasBlockingCashAdvance && (
+            <p className="text-sm text-amber-700 dark:text-amber-400 mt-2">
+              You already have a pending or unpaid cash advance. You can submit a new request after it is rejected or fully
+              repaid through payroll.
+            </p>
+          )}
         </div>
-        <Button onClick={() => setFormOpen(true)}>
+        <Button onClick={() => setFormOpen(true)} disabled={hasBlockingCashAdvance}>
           <Plus className="w-4 h-4 mr-2" />
           New request
         </Button>
@@ -221,24 +269,24 @@ export function CashAdvanceModule() {
                 <p className="text-xs text-muted-foreground">Max {policy.installmentMaxPeriods} (admin setting)</p>
               </div>
             )}
-            <div className="space-y-1.5">
-              <Label>Interest rate (%)</Label>
+            <div className="space-y-1.5 rounded-md border bg-muted/50 p-3">
+              <Label className="text-muted-foreground">Interest rate (from admin settings)</Label>
               <Input
-                type="number"
-                min={0}
-                step={0.01}
-                value={interestRate}
-                onChange={(e) => setInterestRate(parseFloat(e.target.value) || 0)}
+                type="text"
+                readOnly
+                disabled
+                className="bg-background"
+                value={`${effectiveInterestRate.toFixed(2)}% (${repaymentType === "FULL" ? "full payment" : "installment"})`}
               />
               <p className="text-xs text-muted-foreground">
-                Total repayable:{" "}
-                {formatCurrency(cashAdvanceAmount * (1 + interestRate / 100))}
+                Total repayable (estimate):{" "}
+                {formatCurrency(cashAdvanceAmount * (1 + effectiveInterestRate / 100))}
                 {repaymentType === "INSTALLMENT" && cashAdvanceAmount > 0 && (
                   <>
                     {" "}
                     · Per period ~{" "}
                     {formatCurrency(
-                      (cashAdvanceAmount * (1 + interestRate / 100)) / Math.max(installmentCount, 1),
+                      (cashAdvanceAmount * (1 + effectiveInterestRate / 100)) / Math.max(installmentCount, 1),
                     )}
                   </>
                 )}
@@ -258,7 +306,10 @@ export function CashAdvanceModule() {
             <Button variant="outline" onClick={() => setFormOpen(false)} disabled={submitting}>
               Cancel
             </Button>
-            <Button onClick={handleSubmitCashAdvance} disabled={requestsLoading || submitting}>
+            <Button
+              onClick={handleSubmitCashAdvance}
+              disabled={requestsLoading || submitting || hasBlockingCashAdvance}
+            >
               {submitting ? "Submitting…" : "Submit"}
             </Button>
           </DialogFooter>
@@ -272,19 +323,57 @@ export function CashAdvanceModule() {
             <DialogDescription>Full details</DialogDescription>
           </DialogHeader>
           {detailRow && (
-            <div className="space-y-2 text-sm">
+            <div className="space-y-2 text-sm max-h-[60vh] overflow-y-auto pr-1">
               <p>
                 <span className="text-muted-foreground">Date issued: </span>
                 {new Date(detailRow.dateIssued).toLocaleDateString()}
               </p>
               <p>
-                <span className="text-muted-foreground">Amount: </span>
+                <span className="text-muted-foreground">Principal: </span>
                 {formatCurrency(detailRow.amount)}
+              </p>
+              <p>
+                <span className="text-muted-foreground">Repayment: </span>
+                {detailRow.repaymentType === "INSTALLMENT"
+                  ? `Installment (${detailRow.installmentCount ?? "—"} periods)`
+                  : "Full (next payroll)"}
+              </p>
+              <p>
+                <span className="text-muted-foreground">Interest rate: </span>
+                {(detailRow.interestRate ?? 0).toFixed(2)}%
+              </p>
+              {(detailRow.totalRepayable != null || detailRow.status === "APPROVED") && (
+                <p>
+                  <span className="text-muted-foreground">Total repayable: </span>
+                  {formatCurrency(detailRow.totalRepayable ?? detailRow.amount * (1 + (detailRow.interestRate ?? 0) / 100))}
+                </p>
+              )}
+              {detailRow.amountPerPeriod != null && detailRow.status === "APPROVED" && (
+                <p>
+                  <span className="text-muted-foreground">Per payroll (scheduled): </span>
+                  {formatCurrency(detailRow.amountPerPeriod)}
+                </p>
+              )}
+              {detailRow.remainingBalance != null && detailRow.status === "APPROVED" && (
+                <p>
+                  <span className="text-muted-foreground">Remaining balance: </span>
+                  {formatCurrency(detailRow.remainingBalance)}
+                </p>
+              )}
+              <p>
+                <span className="text-muted-foreground">Fully repaid: </span>
+                {detailRow.isPaid ? "Yes" : "No"}
               </p>
               <p>
                 <span className="text-muted-foreground">Status: </span>
                 {detailRow.status}
               </p>
+              {detailRow.approvedAt && (
+                <p>
+                  <span className="text-muted-foreground">Approved: </span>
+                  {new Date(detailRow.approvedAt).toLocaleString()}
+                </p>
+              )}
               <p>
                 <span className="text-muted-foreground">Reason: </span>
                 {detailRow.reason?.trim() || "—"}

@@ -70,19 +70,19 @@ export default function SignInPage() {
 
   return (
     <div className="min-h-screen relative flex items-center justify-center p-4 overflow-hidden">
-      <div className="absolute inset-0 z-0">
+      {/* <div className="absolute inset-0 z-0">
         {!imageError ? (
-          <img 
-            src="/trop.jpg" 
-            alt="Beach background" 
-            className="w-full h-full object-cover"
-            onError={() => setImageError(true)}
-          />
+          // <img 
+          //   src="/trop.jpg" 
+          //   alt="Beach background" 
+          //   className="w-full h-full object-cover"
+          //   onError={() => setImageError(true)}
+          // />
         ) : (
           <div className="w-full h-full bg-gradient-to-br from-cyan-400 via-blue-500 to-orange-400" />
         )}
         <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/30 via-blue-500/20 to-orange-400/30 backdrop-blur-[2px]" />
-      </div>
+      </div> */}
 
       <div className="absolute top-0 left-0 w-full h-32 z-10 opacity-20">
         <svg viewBox="0 0 1200 120" preserveAspectRatio="none" className="w-full h-full">
@@ -125,7 +125,7 @@ export default function SignInPage() {
           <div className="relative mx-auto flex justify-center px-4">
             <div className="relative rounded-xl bg-white dark:bg-slate-950 px-6 py-3 shadow-lg border border-cyan-200/50 dark:border-cyan-800/50">
               <img
-                src="/GWB.png"
+                src="/gwbrlogo.png"
                 alt="Glan Whitesand Beach Resort"
                 className="h-14 sm:h-16 w-auto max-w-[min(280px,85vw)] object-contain mx-auto"
                 onError={(e) => {

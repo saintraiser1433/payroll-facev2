@@ -5,9 +5,9 @@ import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 import bcrypt from 'bcryptjs'
 import QRCode from 'qrcode'
+import { generateNextEmployeeId } from '@/lib/employee-id'
 
 const employeeSchema = z.object({
-  employeeId: z.string().min(1, 'Employee ID is required'),
   firstName: z.string().min(1, 'First name is required'),
   lastName: z.string().min(1, 'Last name is required'),
   email: z.string().email('Valid email is required'),
@@ -153,17 +153,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
     const validatedData = employeeSchema.parse(body)
 
-    // Check if employee ID already exists
-    const existingEmployee = await prisma.employee.findUnique({
-      where: { employeeId: validatedData.employeeId }
-    })
-
-    if (existingEmployee) {
-      return NextResponse.json(
-        { error: 'Employee ID already exists' },
-        { status: 400 }
-      )
-    }
+    const newEmployeeId = await generateNextEmployeeId(prisma)
 
     // Check if email already exists in users table
     const existingUser = await prisma.user.findUnique({
@@ -183,7 +173,7 @@ export async function POST(request: NextRequest) {
     // Generate QR code only for active employees
     let qrCode: string | null = null
     if (validatedData.isActive) {
-      qrCode = await generateQRCode(validatedData.employeeId)
+      qrCode = await generateQRCode(newEmployeeId)
     }
 
     // Create user and employee in a transaction
@@ -200,7 +190,7 @@ export async function POST(request: NextRequest) {
       // Create employee with user reference
       const employee = await tx.employee.create({
         data: {
-          employeeId: validatedData.employeeId,
+          employeeId: newEmployeeId,
           firstName: validatedData.firstName,
           lastName: validatedData.lastName,
           email: validatedData.email,

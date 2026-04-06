@@ -33,6 +33,14 @@ type CashRow = {
   dateIssued: string
   reason?: string | null
   status: string
+  repaymentType?: "FULL" | "INSTALLMENT"
+  installmentCount?: number | null
+  interestRate?: number | null
+  totalRepayable?: number | null
+  remainingBalance?: number | null
+  amountPerPeriod?: number | null
+  isPaid?: boolean
+  approvedAt?: string | null
   employee: { firstName: string; lastName: string; position: string; email: string }
 }
 
@@ -238,13 +246,57 @@ export function DeptHeadCashAdvanceRequestsModule() {
             </DialogDescription>
           </DialogHeader>
           {review && (
-            <div className="space-y-2 text-sm">
+            <div className="space-y-2 text-sm max-h-[60vh] overflow-y-auto pr-1">
               <p>
                 <span className="text-muted-foreground">Status: </span>
                 <Badge variant={statusBadgeVariant(review.status)} className="ml-1">
                   {review.status}
                 </Badge>
               </p>
+              <p>
+                <span className="text-muted-foreground">Principal: </span>
+                {formatCurrency(review.amount)}
+              </p>
+              <p>
+                <span className="text-muted-foreground">Repayment: </span>
+                {review.repaymentType === "INSTALLMENT"
+                  ? `Installment (${review.installmentCount ?? "—"} periods)`
+                  : "Full (next payroll)"}
+              </p>
+              <p>
+                <span className="text-muted-foreground">Interest rate: </span>
+                {(review.interestRate ?? 0).toFixed(2)}%
+              </p>
+              {(review.totalRepayable != null || review.status === "APPROVED") && (
+                <p>
+                  <span className="text-muted-foreground">Total repayable: </span>
+                  {formatCurrency(
+                    review.totalRepayable ?? review.amount * (1 + (review.interestRate ?? 0) / 100),
+                  )}
+                </p>
+              )}
+              {review.amountPerPeriod != null && review.status === "APPROVED" && (
+                <p>
+                  <span className="text-muted-foreground">Per payroll (scheduled): </span>
+                  {formatCurrency(review.amountPerPeriod)}
+                </p>
+              )}
+              {review.remainingBalance != null && review.status === "APPROVED" && (
+                <p>
+                  <span className="text-muted-foreground">Remaining balance: </span>
+                  {formatCurrency(review.remainingBalance)}
+                </p>
+              )}
+              <p>
+                <span className="text-muted-foreground">Fully repaid: </span>
+                {review.isPaid ? "Yes" : "No"}
+              </p>
+              {review.approvedAt && (
+                <p>
+                  <span className="text-muted-foreground">Approved: </span>
+                  {new Date(review.approvedAt).toLocaleString()}
+                </p>
+              )}
               <p className="text-muted-foreground">
                 <span className="font-medium text-foreground">Reason: </span>
                 {review.reason?.trim() || "—"}

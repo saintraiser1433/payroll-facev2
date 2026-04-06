@@ -12,6 +12,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Get the department head's employee record with department info
+    const since = new Date()
+    since.setDate(since.getDate() - 120)
+
     const departmentHead = await prisma.employee.findFirst({
       where: {
         userId: session.user.id
@@ -20,12 +23,18 @@ export async function GET(request: NextRequest) {
         attendances: {
           where: {
             date: {
-              gte: new Date(new Date().setDate(new Date().getDate() - 30)) // Last 30 days
-            }
+              gte: since,
+            },
           },
           orderBy: {
             date: 'desc'
-          }
+          },
+          take: 400,
+        },
+        leaveRequests: {
+          where: { status: 'APPROVED' },
+          orderBy: { startDate: 'desc' },
+          take: 100,
         },
         payrollItems: {
           include: {
@@ -112,6 +121,12 @@ export async function GET(request: NextRequest) {
           status: att.status,
           lateMinutes: att.lateMinutes,
           overtimeMinutes: att.overtimeMinutes
+        })),
+        approvedLeaves: departmentHead.leaveRequests.map((lr) => ({
+          id: lr.id,
+          startDate: lr.startDate.toISOString(),
+          endDate: lr.endDate.toISOString(),
+          reason: lr.reason,
         })),
         payrollItems: departmentHead.payrollItems.map(item => ({
           id: item.id,

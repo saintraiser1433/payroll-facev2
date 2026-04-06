@@ -7,7 +7,6 @@ import bcrypt from 'bcryptjs'
 import QRCode from 'qrcode'
 
 const employeeUpdateSchema = z.object({
-  employeeId: z.string().min(1, 'Employee ID is required').optional(),
   firstName: z.string().min(1, 'First name is required').optional(),
   lastName: z.string().min(1, 'Last name is required').optional(),
   email: z.string().email('Valid email is required').optional(),
@@ -148,20 +147,6 @@ export async function PUT(
       userRole: existingEmployee.user?.role
     })
 
-    // Check if employee ID already exists (if being updated)
-    if (validatedData.employeeId && validatedData.employeeId !== existingEmployee.employeeId) {
-      const duplicateEmployeeId = await prisma.employee.findUnique({
-        where: { employeeId: validatedData.employeeId }
-      })
-
-      if (duplicateEmployeeId) {
-        return NextResponse.json(
-          { error: 'Employee ID already exists' },
-          { status: 400 }
-        )
-      }
-    }
-
     // Check if email already exists in users table (if being updated)
     if (validatedData.email && validatedData.email !== existingEmployee.email) {
       const duplicateUser = await prisma.user.findUnique({
@@ -189,8 +174,7 @@ export async function PUT(
     
     if (finalIsActive) {
       // Employee is active - generate/regenerate QR code
-      const employeeIdToUse = validatedData.employeeId || existingEmployee.employeeId
-      const qrCode = await generateQRCode(employeeIdToUse)
+      const qrCode = await generateQRCode(existingEmployee.employeeId)
       if (qrCode) {
         qrCodeUpdate.qrCode = qrCode
       }

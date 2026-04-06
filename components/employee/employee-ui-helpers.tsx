@@ -34,6 +34,13 @@ export function getStatusBadge(status: string) {
           Absent
         </Badge>
       )
+    case "LEAVE":
+      return (
+        <Badge variant="secondary" className="bg-red-200 text-red-900 border border-red-300">
+          <XCircle className="w-3 h-3 mr-1" />
+          Leave
+        </Badge>
+      )
     default:
       return null
   }

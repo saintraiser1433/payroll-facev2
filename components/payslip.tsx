@@ -4,10 +4,11 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Download, Printer } from "lucide-react"
+import { isPayslipHiddenDeduction } from "@/lib/payslip-display"
 
-interface PayslipData {
+export interface PayslipData {
   companyName: string
-  companyFullName: string
+  companyFullName?: string
   period: {
     name: string
     startDate: string
@@ -18,6 +19,7 @@ interface PayslipData {
     firstName: string
     lastName: string
     position: string
+    employeeId?: string
     department?: {
       name: string
     }
@@ -39,12 +41,37 @@ interface PayslipData {
   undertimeDeduction?: number
   generatedAt: string
   isThirteenthMonth?: boolean
+  monthlyRate?: number
+  /** Usually payroll period end date */
+  payslipDate?: string
 }
 
 interface PayslipProps {
   isOpen: boolean
   onClose: () => void
   payslipData: PayslipData | null
+}
+
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP",
+    minimumFractionDigits: 2,
+  }).format(amount)
+}
+
+function formatPayslipHeaderDate(iso: string) {
+  return new Date(iso).toLocaleDateString("en-PH", {
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })
+}
+
+function formatPeriodRange(startDate: string, endDate: string) {
+  const a = new Date(startDate).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
+  const b = new Date(endDate).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
+  return `${a} – ${b}`
 }
 
 export function Payslip({ isOpen, onClose, payslipData }: PayslipProps) {
@@ -57,8 +84,7 @@ export function Payslip({ isOpen, onClose, payslipData }: PayslipProps) {
   }
 
   const handleDownload = () => {
-    // Create a downloadable version of the payslip
-    const printWindow = window.open('', '_blank')
+    const printWindow = window.open("", "_blank")
     if (printWindow && payslipData) {
       printWindow.document.write(generatePayslipHTML(payslipData))
       printWindow.document.close()
@@ -68,38 +94,29 @@ export function Payslip({ isOpen, onClose, payslipData }: PayslipProps) {
 
   if (!payslipData) return null
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: '2-digit',
-      day: '2-digit',
-      year: '2-digit'
-    })
-  }
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-PH', {
-      style: 'currency',
-      currency: 'PHP'
-    }).format(amount)
-  }
-
   const displayDeductions = payslipData.deductions.filter(
-    (d) => d.amount > 0 && d.deductionType?.name,
+    (d) => d.amount > 0 && d.deductionType?.name && !isPayslipHiddenDeduction(d.deductionType.name),
   )
-  const calculatedTotalDeductions = payslipData.totalDeductions
-  const calculatedNetPay = payslipData.netPay
+
+  const isThirteenth = payslipData.isThirteenthMonth || payslipData.period.isThirteenthMonth
+  const headerDate = payslipData.payslipDate || payslipData.period.endDate
+  const monthlyRate = payslipData.monthlyRate ?? 0
+  const emp = payslipData.employee
+  const nameLine = `${emp.lastName}, ${emp.firstName}`
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Payslip - {payslipData.employee.firstName} {payslipData.employee.lastName}</DialogTitle>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto print:max-w-none print:border-0 print:shadow-none">
+        <DialogHeader className="no-print">
+          <DialogTitle>
+            Payslip — {emp.firstName} {emp.lastName}
+          </DialogTitle>
         </DialogHeader>
-        
-        <div className="flex gap-2 mb-4">
+
+        <div className="no-print flex gap-2 mb-4">
           <Button onClick={handlePrint} disabled={isPrinting} className="flex items-center gap-2">
             <Printer className="h-4 w-4" />
-            {isPrinting ? 'Printing...' : 'Print'}
+            {isPrinting ? "Printing…" : "Print"}
           </Button>
           <Button onClick={handleDownload} variant="outline" className="flex items-center gap-2">
             <Download className="h-4 w-4" />
@@ -107,145 +124,114 @@ export function Payslip({ isOpen, onClose, payslipData }: PayslipProps) {
           </Button>
         </div>
 
-        <div className="payslip-container bg-white text-black font-mono text-sm">
-          <div className="payslip-header border-b-2 border-black pb-2 mb-4">
-            <div className="flex justify-between items-start">
+        <div className="payslip-container bg-white text-black font-mono text-[13px] leading-snug print:p-2">
+          <div className="text-center border-b-2 border-black pb-2 mb-3">
+            <img
+              src="/gwbrlogo.png"
+              alt="Glan White Sand Beach Resort logo"
+              className="mx-auto mb-2 h-12 w-auto object-contain"
+            />
+            <div className="text-[15px] font-bold tracking-tight">{payslipData.companyName}</div>
+          </div>
+
+          <div className="flex justify-between gap-6 mb-3 text-sm">
+            <div className="space-y-1">
               <div>
-                <div className="text-lg font-bold">{payslipData.companyName}</div>
-                <div className="text-sm">{payslipData.companyFullName}</div>
-                <div className="text-sm font-bold mt-1">
-                  {payslipData.isThirteenthMonth || payslipData.period.isThirteenthMonth 
-                    ? 'PAYSLIP - 13TH MONTH PAY' 
-                    : 'PAYSLIP - SEMI-MONTHLY PAYROLL'}
-                </div>
+                <span className="font-bold">Name:</span> {nameLine}
               </div>
-              <div className="text-right">
-                <div className="text-sm font-bold">PERIOD: {formatDate(payslipData.period.startDate)} to {formatDate(payslipData.period.endDate)}</div>
+              <div>
+                <span className="font-bold">Monthly Rate:</span> {formatCurrency(monthlyRate)}
+              </div>
+            </div>
+            <div className="text-right space-y-1">
+              <div>
+                <span className="font-bold">Date:</span> {formatPayslipHeaderDate(headerDate)}
+              </div>
+              <div>
+                <span className="font-bold">ID No.:</span> {emp.employeeId?.trim() || "—"}
               </div>
             </div>
           </div>
 
-          <div className="employee-info mb-4">
-            <div className="flex justify-between">
-              <div>
-                <div className="mb-1">
-                  <span className="font-bold">EMPLOYEE:</span> {payslipData.employee.firstName} {payslipData.employee.lastName}
-                </div>
-                <div className="mb-1">
-                  <span className="font-bold">POSITION:</span> {payslipData.employee.position}
-                </div>
-              </div>
-              <div>
-                <div className="mb-1">
-                  <span className="font-bold">STATUS:</span> REGULAR
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="payroll-breakdown mb-4">
-            <div className={`grid gap-4 ${payslipData.isThirteenthMonth || payslipData.period.isThirteenthMonth ? 'grid-cols-3' : 'grid-cols-4'}`}>
-              {/* Overtime Section - Hidden for 13th month pay */}
-              {!(payslipData.isThirteenthMonth || payslipData.period.isThirteenthMonth) && (
-                <div className="border border-black p-2">
-                  <div className="text-center font-bold border-b border-black pb-1 mb-2">OVERTIME</div>
-                  <div className="grid grid-cols-2 gap-1 text-xs">
-                    <div className="font-bold">MIN</div>
-                    <div className="font-bold">PAY</div>
-                    <div>REGULAR</div>
-                    <div className="text-right">{formatCurrency(payslipData.overtimePay)}</div>
-                  </div>
-                </div>
-              )}
-
-              {/* Adjustments Section */}
-              <div className="border border-black p-2">
-                <div className="text-center font-bold border-b border-black pb-1 mb-2">ADJUSTMENTS</div>
-                <div className="grid grid-cols-2 gap-1 text-xs">
-                  <div className="font-bold">AMOUNT</div>
-                  <div></div>
-                  {payslipData.isThirteenthMonth || payslipData.period.isThirteenthMonth ? (
-                    <>
-                      <div>13TH MONTH PAY</div>
-                      <div className="text-right">{formatCurrency(payslipData.thirteenthMonthPay || 0)}</div>
-                    </>
-                  ) : (
-                    <>
-                      <div>HOLIDAY PAY</div>
-                      <div className="text-right">{formatCurrency(payslipData.holidayPay || 0)}</div>
-                    </>
-                  )}
-                </div>
+          {!isThirteenth ? (
+            <>
+              <div className="text-xs text-center mb-1 text-muted-foreground">
+                Period: {formatPeriodRange(payslipData.period.startDate, payslipData.period.endDate)}
               </div>
 
-            {/* Deductions Section */}
-            <div className="border border-black p-2">
-              <div className="text-center font-bold border-b border-black pb-1 mb-2">DEDUCTION</div>
-              <div className="space-y-1 text-xs">
-                {displayDeductions.length > 0 ? (
-                  displayDeductions.map((deduction, index) => (
-                    <div key={index} className="flex justify-between">
-                      <span>{deduction.deductionType.name.toUpperCase()}</span>
-                      <span>{formatCurrency(deduction.amount)}</span>
+              <div className="grid grid-cols-2 border border-black">
+                <div className="border-r border-black p-2">
+                  <div className="font-bold border-b border-black pb-1 mb-2 text-center">Earnings</div>
+                  <div className="space-y-1">
+                    <PayslipRow label="Basic Pay" value={payslipData.basicPay} />
+                    <PayslipRow label="13th Month" value={null} empty />
+                    <PayslipRow label="Undertime(hr)" value={null} empty />
+                    <PayslipRow
+                      label="OT - Regular"
+                      value={payslipData.overtimePay > 0 ? payslipData.overtimePay : null}
+                      empty={payslipData.overtimePay <= 0}
+                    />
+                    <PayslipRow label="OT - Rest Day" value={null} empty />
+                    <PayslipRow label="OT - Special Holiday" value={null} empty />
+                    <PayslipRow
+                      label="Adjustment"
+                      value={payslipData.holidayPay && payslipData.holidayPay > 0 ? payslipData.holidayPay : null}
+                      empty={!payslipData.holidayPay}
+                    />
+                    <div className="flex justify-between border-t border-black pt-1 mt-1 font-bold">
+                      <span>Gross Pay</span>
+                      <span>{formatCurrency(payslipData.grossPay)}</span>
                     </div>
-                  ))
-                ) : (
-                  <div className="text-center text-muted-foreground">No deductions</div>
-                )}
+                  </div>
+                </div>
+                <div className="p-2">
+                  <div className="font-bold border-b border-black pb-1 mb-2 text-center">Deductions</div>
+                  <div className="space-y-1 min-h-[200px]">
+                    {displayDeductions.length > 0 ? (
+                      displayDeductions.map((d, i) => (
+                        <div key={i} className="flex justify-between gap-2">
+                          <span className="uppercase">{d.deductionType.name}</span>
+                          <span>{formatCurrency(d.amount)}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-muted-foreground text-center py-4">—</div>
+                    )}
+                    <div className="flex justify-between border-t border-black pt-1 mt-2 font-bold">
+                      <span>Total Deductions</span>
+                      <span>{formatCurrency(payslipData.totalDeductions)}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 flex justify-end border-t-2 border-black pt-2">
+                <div className="text-base font-bold">
+                  Net Pay: {formatCurrency(payslipData.netPay)}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="border border-black p-3 space-y-2">
+              <div className="font-bold text-center border-b border-black pb-2">13th month pay</div>
+              <div className="flex justify-between">
+                <span>13th month pay</span>
+                <span>{formatCurrency(payslipData.thirteenthMonthPay || 0)}</span>
+              </div>
+              <div className="flex justify-between font-bold border-t border-black pt-2">
+                <span>Net Pay</span>
+                <span>{formatCurrency(payslipData.netPay)}</span>
               </div>
             </div>
+          )}
 
-              {/* Summary Section */}
-              <div className="border border-black p-2">
-                <div className="text-center font-bold border-b border-black pb-1 mb-2">SUMMARY</div>
-                <div className="space-y-1 text-xs">
-                  {payslipData.isThirteenthMonth || payslipData.period.isThirteenthMonth ? (
-                    <>
-                      <div className="flex justify-between">
-                        <span>13TH MONTH PAY:</span>
-                        <span>{formatCurrency(payslipData.thirteenthMonthPay || 0)}</span>
-                      </div>
-                      <div className="flex justify-between border-t border-black pt-1">
-                        <span className="font-bold">GROSS PAY:</span>
-                        <span className="font-bold">{formatCurrency(payslipData.grossPay)}</span>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="flex justify-between">
-                        <span>BASIC PAY:</span>
-                        <span>{formatCurrency(payslipData.basicPay)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>OVERTIME:</span>
-                        <span>{formatCurrency(payslipData.overtimePay)}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>HOLIDAY PAY:</span>
-                        <span>{formatCurrency(payslipData.holidayPay || 0)}</span>
-                      </div>
-                      <div className="flex justify-between border-t border-black pt-1">
-                        <span className="font-bold">GROSS PAY:</span>
-                        <span className="font-bold">{formatCurrency(payslipData.grossPay)}</span>
-                      </div>
-                    </>
-                  )}
-                  <div className="flex justify-between">
-                    <span>DEDUCTION:</span>
-                    <span>{formatCurrency(calculatedTotalDeductions)}</span>
-                  </div>
-                  <div className="flex justify-between border-t border-black pt-1">
-                    <span className="font-bold">NET PAY:</span>
-                    <span className="font-bold">{formatCurrency(calculatedNetPay)}</span>
-                  </div>
-                </div>
-                <div className="mt-4 pt-2 border-t border-black">
-                  <div className="text-xs">
-                    <div>RECEIVED BY:</div>
-                    <div className="border-b border-black mt-1 h-6"></div>
-                  </div>
-                </div>
-              </div>
+          <div className="mt-6 text-xs space-y-6">
+            <p className="text-center max-w-md mx-auto">
+              I acknowledge to have received the amount as full compensation of services rendered
+            </p>
+            <div>
+              <span className="font-bold">Employee Signature:</span>
+              <span className="inline-block min-w-[200px] border-b border-black ml-2 align-bottom" />
             </div>
           </div>
         </div>
@@ -254,212 +240,155 @@ export function Payslip({ isOpen, onClose, payslipData }: PayslipProps) {
   )
 }
 
-function generatePayslipHTML(payslipData: PayslipData): string {
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: '2-digit',
-      day: '2-digit',
-      year: '2-digit'
-    })
-  }
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-PH', {
-      style: 'currency',
-      currency: 'PHP'
-    }).format(amount)
-  }
-
-  const formatMinutes = (minutes: number) => {
-    if (!minutes || minutes === 0) return '0 min'
-    const hours = Math.floor(minutes / 60)
-    const mins = minutes % 60
-    if (hours > 0 && mins > 0) {
-      return `${hours}h ${mins}m`
-    } else if (hours > 0) {
-      return `${hours}h`
-    } else {
-      return `${mins}m`
-    }
-  }
-
-  const displayDeductionsHtml = payslipData.deductions.filter(
-    (d) => d.amount > 0 && d.deductionType?.name,
+function PayslipRow({
+  label,
+  value,
+  empty,
+}: {
+  label: string
+  value: number | null
+  empty?: boolean
+}) {
+  const show = empty || value === null ? "—" : formatCurrency(value)
+  return (
+    <div className="flex justify-between gap-2">
+      <span>{label}</span>
+      <span className="tabular-nums">{show}</span>
+    </div>
   )
-  const calculatedTotalDeductions = payslipData.totalDeductions
-  const calculatedNetPay = payslipData.netPay
+}
+
+function generatePayslipHTML(payslipData: PayslipData): string {
+  const formatCurrencyHtml = (amount: number) =>
+    new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 2 }).format(amount)
+
+  const formatPayslipHeaderDate = (iso: string) =>
+    new Date(iso).toLocaleDateString("en-PH", { year: "numeric", month: "long", day: "numeric" })
+
+  const formatPeriodRange = (startDate: string, endDate: string) => {
+    const a = new Date(startDate).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
+    const b = new Date(endDate).toLocaleDateString("en-PH", { month: "short", day: "numeric", year: "numeric" })
+    return `${a} – ${b}`
+  }
+
+  const displayDeductions = payslipData.deductions.filter(
+    (d) => d.amount > 0 && d.deductionType?.name && !isPayslipHiddenDeduction(d.deductionType.name),
+  )
+
+  const isThirteenth = payslipData.isThirteenthMonth || payslipData.period.isThirteenthMonth
+  const headerDate = payslipData.payslipDate || payslipData.period.endDate
+  const monthlyRate = payslipData.monthlyRate ?? 0
+  const emp = payslipData.employee
+  const nameLine = `${emp.lastName}, ${emp.firstName}`
+
+  function rowHtml(label: string, value: number) {
+    return `<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>${label}</span><span>${formatCurrencyHtml(value)}</span></div>`
+  }
+
+  function rowHtmlEmpty(label: string) {
+    return `<div style="display:flex;justify-content:space-between;margin-bottom:4px;"><span>${label}</span><span>—</span></div>`
+  }
+
+  const deductionsRows =
+    displayDeductions.length > 0
+      ? displayDeductions
+          .map(
+            (d) => `
+        <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:4px;">
+          <span>${String(d.deductionType.name).toUpperCase()}</span>
+          <span>${formatCurrencyHtml(d.amount)}</span>
+        </div>`,
+          )
+          .join("")
+      : `<div style="text-align:center;color:#666;padding:16px;">—</div>`
+
+  const regularBody = `
+    <div style="font-size:11px;text-align:center;margin-bottom:6px;color:#444;">
+      Period: ${formatPeriodRange(payslipData.period.startDate, payslipData.period.endDate)}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;border:1px solid #000;">
+      <div style="border-right:1px solid #000;padding:8px;">
+        <div style="font-weight:bold;border-bottom:1px solid #000;padding-bottom:4px;margin-bottom:8px;text-align:center;">Earnings</div>
+        <div style="font-size:12px;">
+          ${rowHtml("Basic Pay", payslipData.basicPay)}
+          ${rowHtmlEmpty("13th Month")}
+          ${rowHtmlEmpty("Undertime(hr)")}
+          ${
+            payslipData.overtimePay > 0
+              ? rowHtml("OT - Regular", payslipData.overtimePay)
+              : rowHtmlEmpty("OT - Regular")
+          }
+          ${rowHtmlEmpty("OT - Rest Day")}
+          ${rowHtmlEmpty("OT - Special Holiday")}
+          ${
+            payslipData.holidayPay && payslipData.holidayPay > 0
+              ? rowHtml("Adjustment", payslipData.holidayPay)
+              : rowHtmlEmpty("Adjustment")
+          }
+          <div style="display:flex;justify-content:space-between;border-top:1px solid #000;padding-top:4px;margin-top:4px;font-weight:bold;">
+            <span>Gross Pay</span><span>${formatCurrencyHtml(payslipData.grossPay)}</span>
+          </div>
+        </div>
+      </div>
+      <div style="padding:8px;">
+        <div style="font-weight:bold;border-bottom:1px solid #000;padding-bottom:4px;margin-bottom:8px;text-align:center;">Deductions</div>
+        <div style="font-size:12px;min-height:200px;">
+          ${deductionsRows}
+          <div style="display:flex;justify-content:space-between;border-top:1px solid #000;padding-top:8px;margin-top:8px;font-weight:bold;">
+            <span>Total Deductions</span><span>${formatCurrencyHtml(payslipData.totalDeductions)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:12px;text-align:right;border-top:2px solid #000;padding-top:8px;font-size:15px;font-weight:bold;">
+      Net Pay: ${formatCurrencyHtml(payslipData.netPay)}
+    </div>
+  `
+
+  const thirteenthBody = `
+    <div style="border:1px solid #000;padding:12px;">
+      <div style="font-weight:bold;text-align:center;border-bottom:1px solid #000;padding-bottom:8px;">13th month pay</div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px;">
+        <span>13th month pay</span><span>${formatCurrencyHtml(payslipData.thirteenthMonthPay || 0)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-weight:bold;border-top:1px solid #000;padding-top:8px;margin-top:8px;">
+        <span>Net Pay</span><span>${formatCurrencyHtml(payslipData.netPay)}</span>
+      </div>
+    </div>
+  `
 
   return `
     <!DOCTYPE html>
     <html>
     <head>
-      <title>Payslip - ${payslipData.employee.firstName} ${payslipData.employee.lastName}</title>
+      <title>Payslip — ${emp.firstName} ${emp.lastName}</title>
       <style>
-        body { font-family: 'Courier New', monospace; font-size: 12px; margin: 20px; }
-        .payslip-container { max-width: 800px; margin: 0 auto; }
-        .payslip-header { border-bottom: 2px solid black; padding-bottom: 10px; margin-bottom: 20px; }
-        .employee-info { margin-bottom: 20px; }
-        .payroll-breakdown { margin-bottom: 20px; }
-        .grid { display: grid; }
-        .grid-cols-4 { grid-template-columns: repeat(4, 1fr); }
-        .gap-4 { gap: 16px; }
-        .border { border: 1px solid black; }
-        .border-black { border-color: black; }
-        .p-2 { padding: 8px; }
-        .text-center { text-align: center; }
-        .font-bold { font-weight: bold; }
-        .text-right { text-align: right; }
-        .border-b { border-bottom: 1px solid black; }
-        .pb-1 { padding-bottom: 4px; }
-        .mb-2 { margin-bottom: 8px; }
-        .space-y-1 > * + * { margin-top: 4px; }
-        .flex { display: flex; }
-        .justify-between { justify-content: space-between; }
-        .pt-1 { padding-top: 4px; }
-        .mt-1 { margin-top: 4px; }
-        .mt-4 { margin-top: 16px; }
-        .pt-2 { padding-top: 8px; }
-        .h-6 { height: 24px; }
-        @media print {
-          body { margin: 0; }
-          .no-print { display: none; }
-        }
+        body { font-family: 'Courier New', Courier, monospace; font-size: 13px; margin: 20px; color: #000; }
+        @media print { body { margin: 12px; } }
       </style>
     </head>
     <body>
-      <div class="payslip-container">
-        <div class="payslip-header">
-          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-            <div>
-              <div style="font-size: 18px; font-weight: bold;">${payslipData.companyName}</div>
-              <div style="font-size: 12px;">${payslipData.companyFullName}</div>
-              <div style="font-size: 12px; font-weight: bold; margin-top: 4px;">
-                ${payslipData.isThirteenthMonth || payslipData.period.isThirteenthMonth 
-                  ? 'PAYSLIP - 13TH MONTH PAY' 
-                  : 'PAYSLIP - SEMI-MONTHLY PAYROLL'}
-              </div>
-            </div>
-            <div style="text-align: right;">
-              <div style="font-size: 12px; font-weight: bold;">PERIOD: ${formatDate(payslipData.period.startDate)} to ${formatDate(payslipData.period.endDate)}</div>
-            </div>
+      <div style="max-width:640px;margin:0 auto;">
+        <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:12px;">
+          <img src="/gwbrlogo.png" alt="Glan White Sand Beach Resort logo" style="height:48px;width:auto;object-fit:contain;margin:0 auto 8px auto;" />
+          <div style="font-size:15px;font-weight:bold;">${payslipData.companyName}</div>
+        </div>
+        <div style="display:flex;justify-content:space-between;gap:24px;margin-bottom:12px;font-size:13px;">
+          <div>
+            <div><strong>Name:</strong> ${nameLine}</div>
+            <div><strong>Monthly Rate:</strong> ${formatCurrencyHtml(monthlyRate)}</div>
+          </div>
+          <div style="text-align:right;">
+            <div><strong>Date:</strong> ${formatPayslipHeaderDate(headerDate)}</div>
+            <div><strong>ID No.:</strong> ${emp.employeeId?.trim() || "—"}</div>
           </div>
         </div>
-
-        <div class="employee-info">
-          <div style="display: flex; justify-content: space-between;">
-            <div>
-              <div style="margin-bottom: 4px;">
-                <span style="font-weight: bold;">EMPLOYEE:</span> ${payslipData.employee.firstName} ${payslipData.employee.lastName}
-              </div>
-              <div style="margin-bottom: 4px;">
-                <span style="font-weight: bold;">POSITION:</span> ${payslipData.employee.position}
-              </div>
-            </div>
-            <div>
-              <div style="margin-bottom: 4px;">
-                <span style="font-weight: bold;">STATUS:</span> REGULAR
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="payroll-breakdown">
-          <div class="grid ${payslipData.isThirteenthMonth || payslipData.period.isThirteenthMonth ? 'grid-cols-3' : 'grid-cols-4'} gap-4">
-            ${!(payslipData.isThirteenthMonth || payslipData.period.isThirteenthMonth) ? `
-            <!-- Overtime Section -->
-            <div class="border p-2">
-              <div class="text-center font-bold border-b pb-1 mb-2">OVERTIME</div>
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 10px;">
-                <div class="font-bold">MIN</div>
-                <div class="font-bold">PAY</div>
-                <div>REGULAR</div>
-                <div class="text-right">${formatCurrency(payslipData.overtimePay)}</div>
-              </div>
-            </div>
-            ` : ''}
-
-            <!-- Adjustments Section -->
-            <div class="border p-2">
-              <div class="text-center font-bold border-b pb-1 mb-2">ADJUSTMENTS</div>
-              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 10px;">
-                <div class="font-bold">AMOUNT</div>
-                <div></div>
-                ${payslipData.isThirteenthMonth || payslipData.period.isThirteenthMonth ? `
-                <div>13TH MONTH PAY</div>
-                <div class="text-right">${formatCurrency(payslipData.thirteenthMonthPay || 0)}</div>
-                ` : `
-                <div>HOLIDAY PAY</div>
-                <div class="text-right">${formatCurrency(payslipData.holidayPay || 0)}</div>
-                `}
-              </div>
-            </div>
-
-            <!-- Deductions Section -->
-            <div class="border p-2">
-              <div class="text-center font-bold border-b pb-1 mb-2">DEDUCTION</div>
-              <div style="font-size: 10px;">
-                ${displayDeductionsHtml.length > 0
-                  ? displayDeductionsHtml
-                      .map(
-                        (deduction) => `
-                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                  <span>${deduction.deductionType.name.toUpperCase()}</span>
-                  <span>${formatCurrency(deduction.amount)}</span>
-                </div>`,
-                      )
-                      .join("")
-                  : '<div style="text-align: center; color: #666;">No deductions</div>'}
-              </div>
-            </div>
-
-            <!-- Summary Section -->
-            <div class="border p-2">
-              <div class="text-center font-bold border-b pb-1 mb-2">SUMMARY</div>
-              <div class="space-y-1" style="font-size: 10px;">
-                ${payslipData.isThirteenthMonth || payslipData.period.isThirteenthMonth ? `
-                <div class="flex justify-between">
-                  <span>13TH MONTH PAY:</span>
-                  <span>${formatCurrency(payslipData.thirteenthMonthPay || 0)}</span>
-                </div>
-                <div class="flex justify-between border-t pt-1">
-                  <span class="font-bold">GROSS PAY:</span>
-                  <span class="font-bold">${formatCurrency(payslipData.grossPay)}</span>
-                </div>
-                ` : `
-                <div class="flex justify-between">
-                  <span>BASIC PAY:</span>
-                  <span>${formatCurrency(payslipData.basicPay)}</span>
-                </div>
-                <div class="flex justify-between">
-                  <span>OVERTIME:</span>
-                  <span>${formatCurrency(payslipData.overtimePay)}</span>
-                </div>
-                <div class="flex justify-between">
-                  <span>HOLIDAY PAY:</span>
-                  <span>${formatCurrency(payslipData.holidayPay || 0)}</span>
-                </div>
-                <div class="flex justify-between border-t pt-1">
-                  <span class="font-bold">GROSS PAY:</span>
-                  <span class="font-bold">${formatCurrency(payslipData.grossPay)}</span>
-                </div>
-                `}
-                <div class="flex justify-between">
-                  <span>DEDUCTION:</span>
-                  <span>${formatCurrency(calculatedTotalDeductions)}</span>
-                </div>
-                <div class="flex justify-between border-t pt-1">
-                  <span class="font-bold">NET PAY:</span>
-                  <span class="font-bold">${formatCurrency(calculatedNetPay)}</span>
-                </div>
-              </div>
-              <div style="margin-top: 16px; padding-top: 8px; border-top: 1px solid black;">
-                <div style="font-size: 10px;">
-                  <div>RECEIVED BY:</div>
-                  <div style="border-bottom: 1px solid black; margin-top: 4px; height: 24px;"></div>
-                </div>
-              </div>
-            </div>
-          </div>
+        ${isThirteenth ? thirteenthBody : regularBody}
+        <div style="margin-top:24px;font-size:11px;">
+          <p style="text-align:center;max-width:360px;margin:0 auto 24px auto;">
+            I acknowledge to have received the amount as full compensation of services rendered
+          </p>
+          <div><strong>Employee Signature:</strong><span style="display:inline-block;min-width:200px;border-bottom:1px solid #000;margin-left:8px;"></span></div>
         </div>
       </div>
     </body>

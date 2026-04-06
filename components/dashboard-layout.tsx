@@ -139,73 +139,91 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-slate-100 to-slate-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       {/* Header */}
-      <header className="h-16 border-b border-border bg-background px-6 flex items-center justify-between">
+      <header className="h-16 border-b border-border/70 bg-gradient-to-r from-blue-600 via-sky-500 to-cyan-500 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 px-6 flex items-center justify-between shadow-sm">
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg overflow-hidden">
-              <img 
-                src="/logo.png" 
-                alt="Glan White Sand Beach Resort Logo" 
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-white/10 backdrop-blur overflow-hidden ring-1 ring-white/30">
+              <img
+                src="/gwbrlogo.png"
+                alt="Glan White Sand Beach Resort Logo"
                 className="w-full h-full object-contain"
               />
             </div>
-            <span className="font-semibold text-foreground">Glan White Sand Beach Resort</span>
-          </div>
-          <div className="text-sm text-muted-foreground">
-            <span className="capitalize">{session?.user?.role?.replace('_', ' ') || 'Dashboard'}</span> <span className="mx-1">/</span>
-            <span className="capitalize">{sidebarPageTitle(pathname)}</span>
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold tracking-tight text-white">
+                Glan White Sand Beach Resort
+              </span>
+              <div className="flex items-center gap-2">
+                <span className="rounded-full bg-white/10 px-2 py-[2px] text-[11px] font-medium uppercase tracking-wide text-slate-50">
+                  {session?.user?.role?.replace("_", " ") || "Dashboard"}
+                </span>
+                <span className="text-xs text-slate-100/80">
+                  {sidebarPageTitle(pathname)}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-            <Input
-              placeholder="Search employees, payroll..."
-              className="pl-10 w-80 bg-muted border-border focus:bg-background"
-            />
+        <div className="flex items-center gap-3">
+          <div className="hidden md:flex items-center">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+              <Input
+                placeholder="Search employees, payroll..."
+                className="pl-10 w-72 bg-white/10 border-white/20 text-slate-50 placeholder:text-slate-200/70 focus:bg-white/90 focus:text-slate-900 focus:border-sky-500 focus:ring-sky-500/40 h-9 text-xs"
+              />
+            </div>
           </div>
           <TopbarNotifications />
           <ThemeToggle />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon">
-                <Avatar className="w-8 h-8">
+              <Button variant="ghost" size="icon" className="rounded-full hover:bg-white/10">
+                <Avatar className="w-8 h-8 ring-2 ring-white/40">
                   <AvatarImage src="/placeholder-user.jpg" alt="User Avatar" />
-                  <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white text-xs font-semibold">
-                    {session?.user?.name ? 
-                      session.user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) :
-                      session?.user?.email ? 
-                        session.user.email.slice(0, 2).toUpperCase() :
-                        'U'
-                    }
+                  <AvatarFallback className="bg-gradient-to-br from-sky-500 to-blue-700 text-white text-xs font-semibold">
+                    {session?.user?.name
+                      ? session.user.name
+                          .split(" ")
+                          .map((n) => n[0])
+                          .join("")
+                          .toUpperCase()
+                          .slice(0, 2)
+                      : session?.user?.email
+                        ? session.user.email.slice(0, 2).toUpperCase()
+                        : "U"}
                   </AvatarFallback>
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuContent align="end" className="w-64">
               <DropdownMenuLabel>
-                <div className="flex items-center gap-2">
-                  <Avatar className="w-8 h-8">
+                <div className="flex items-center gap-3">
+                  <Avatar className="w-9 h-9">
                     <AvatarImage src="/placeholder-user.jpg" alt="User Avatar" />
-                    <AvatarFallback className="bg-gradient-to-br from-blue-500 to-purple-600 text-white text-xs font-semibold">
-                      {session?.user?.name ? 
-                        session.user.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) :
-                        session?.user?.email ? 
-                          session.user.email.slice(0, 2).toUpperCase() :
-                          'U'
-                      }
+                    <AvatarFallback className="bg-gradient-to-br from-sky-500 to-blue-700 text-white text-xs font-semibold">
+                      {session?.user?.name
+                        ? session.user.name
+                            .split(" ")
+                            .map((n) => n[0])
+                            .join("")
+                            .toUpperCase()
+                            .slice(0, 2)
+                        : session?.user?.email
+                          ? session.user.email.slice(0, 2).toUpperCase()
+                          : "U"}
                     </AvatarFallback>
                   </Avatar>
-                  <div>
-                    <div className="font-medium">{session?.user?.name || "User"}</div>
-                    <div className="text-xs text-muted-foreground font-normal">
+                  <div className="space-y-0.5">
+                    <div className="font-medium leading-tight">{session?.user?.name || "User"}</div>
+                    <div className="text-xs text-muted-foreground truncate">
                       {session?.user?.email || "user@example.com"}
                     </div>
-                    <div className="text-xs text-primary font-medium">
-                      {session?.user?.role?.replace('_', ' ') || "Employee"}
+                    <div className="inline-flex items-center rounded-full bg-primary/10 px-2 py-[2px] text-[11px] font-medium text-primary">
+                      {session?.user?.role?.replace("_", " ") || "Employee"}
                     </div>
                   </div>
                 </div>
@@ -222,38 +240,34 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
       <div className="flex">
         {/* Sidebar */}
-            <aside className="w-60 border-r border-border bg-background h-[calc(100vh-4rem)] overflow-y-auto">
-          <div className="p-4">
-            <div className="relative mb-6">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
-              <Input placeholder="Search anything..." className="pl-10 bg-muted border-border text-sm" />
-              <Button
-                size="icon"
-                variant="ghost"
-                className="absolute right-1 top-1/2 transform -translate-y-1/2 w-6 h-6"
-              >
-                <ArrowRight className="w-3 h-3" />
-              </Button>
+        <aside className="w-64 border-r border-sidebar-border bg-sidebar h-[calc(100vh-4rem)] overflow-y-auto">
+          <div className="p-4 space-y-4">
+            <div className="relative mb-3">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+              <Input
+                placeholder="Quick search..."
+                className="pl-10 bg-sidebar-accent text-sidebar-foreground border-sidebar-border text-xs h-9"
+              />
             </div>
 
-            <nav className="space-y-1">
+            <nav className="space-y-4">
               {session?.user?.role === "DEPARTMENT_HEAD" ? (
-                <div className="space-y-5">
+                <div className="space-y-6">
                   <div>
-                    <p className="px-3 mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <p className="px-3 mb-2 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/60">
                       Payroll
                     </p>
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       {departmentHeadPayrollNav.map((item) => {
                         const isActive = departmentHeadLinkActive(pathname, item.href)
                         return (
                           <Link
                             key={item.href}
                             href={item.href}
-                            className={`flex items-center w-full justify-start px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                            className={`flex items-center w-full justify-start px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                               isActive
-                                ? "bg-primary/10 text-primary hover:bg-primary/20"
-                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                                ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                                : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                             }`}
                           >
                             <item.icon className="w-4 h-4 mr-3 shrink-0" />
@@ -264,20 +278,20 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                     </div>
                   </div>
                   <div>
-                    <p className="px-3 mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    <p className="px-3 mb-2 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/60">
                       Request
                     </p>
-                    <div className="space-y-1">
+                    <div className="space-y-1.5">
                       {departmentHeadRequestNav.map((item) => {
                         const isActive = departmentHeadLinkActive(pathname, item.href)
                         return (
                           <Link
                             key={item.href}
                             href={item.href}
-                            className={`flex items-center w-full justify-start px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                            className={`flex items-center w-full justify-start px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                               isActive
-                                ? "bg-primary/10 text-primary hover:bg-primary/20"
-                                : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                                ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                                : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                             }`}
                           >
                             <item.icon className="w-4 h-4 mr-3 shrink-0" />
@@ -300,10 +314,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                     <Link
                       key={item.name}
                       href={item.href}
-                      className={`flex items-center w-full justify-start px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      className={`flex items-center w-full justify-start px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                         isActive
-                          ? "bg-primary/10 text-primary hover:bg-primary/20"
-                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                          ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                          : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
                       }`}
                     >
                       <item.icon className="w-4 h-4 mr-3" />

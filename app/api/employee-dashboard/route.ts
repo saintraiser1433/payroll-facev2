@@ -11,6 +11,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const since = new Date()
+    since.setDate(since.getDate() - 120)
+
     // Get the employee's record with attendance and payroll data
     const employee = await prisma.employee.findFirst({
       where: {
@@ -32,10 +35,16 @@ export async function GET(request: NextRequest) {
           }
         },
         attendances: {
+          where: { date: { gte: since } },
           orderBy: {
             date: 'desc'
           },
-          take: 30 // Last 30 days
+          take: 400,
+        },
+        leaveRequests: {
+          where: { status: 'APPROVED' },
+          orderBy: { startDate: 'desc' },
+          take: 100,
         },
         payrollItems: {
           include: {
@@ -104,6 +113,12 @@ export async function GET(request: NextRequest) {
           status: att.status,
           lateMinutes: att.lateMinutes,
           overtimeMinutes: att.overtimeMinutes
+        })),
+        approvedLeaves: employee.leaveRequests.map((lr) => ({
+          id: lr.id,
+          startDate: lr.startDate.toISOString(),
+          endDate: lr.endDate.toISOString(),
+          reason: lr.reason,
         })),
         payrollItems: employee.payrollItems.map(item => ({
           id: item.id,

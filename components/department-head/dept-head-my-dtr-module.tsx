@@ -10,6 +10,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useDepartmentHeadDashboard } from "@/hooks/use-department-head-dashboard"
 import { filterAndSortData, paginateData } from "@/lib/dept-head-table-helpers"
 import { formatTime, getStatusBadge } from "@/components/employee/employee-ui-helpers"
+import { mergeApprovedLeaveDayKeys, ymdFromAttendanceDate } from "@/lib/leave-dates"
+import { cn } from "@/lib/utils"
 import { DeptHeadTablePaginationFooter } from "@/components/department-head/dept-head-table-pagination-footer"
 
 const itemsPerPage = 10
@@ -59,16 +61,41 @@ export function DeptHeadMyDtrModule() {
 
   if (!data) return null
 
-  const attendanceData =
-    data.employee.attendances?.map((a) => ({
+  const leaveDays = mergeApprovedLeaveDayKeys(data.employee.approvedLeaves ?? [])
+  const attendanceData: any[] = []
+  const seenYmd = new Set<string>()
+
+  for (const a of data.employee.attendances ?? []) {
+    const ymd = ymdFromAttendanceDate(a.date)
+    seenYmd.add(ymd)
+    const onLeave = leaveDays.has(ymd)
+    attendanceData.push({
       id: a.id,
       date: a.date,
       timeIn: a.timeIn,
       timeOut: a.timeOut,
-      status: a.status,
+      status: onLeave ? "LEAVE" : a.status,
       lateMinutes: a.lateMinutes,
       overtimeMinutes: a.overtimeMinutes,
-    })) ?? []
+      isLeaveDay: onLeave,
+    })
+  }
+
+  for (const ymd of leaveDays) {
+    if (seenYmd.has(ymd)) continue
+    attendanceData.push({
+      id: `leave-${ymd}`,
+      date: new Date(`${ymd}T12:00:00`).toISOString(),
+      timeIn: null,
+      timeOut: null,
+      status: "LEAVE",
+      lateMinutes: 0,
+      overtimeMinutes: 0,
+      isLeaveDay: true,
+    })
+  }
+
+  attendanceData.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
 
   const filteredSorted = filterAndSortData(attendanceData, search, sortField, sortDir)
   const { paginatedData, totalItems } = paginateData(filteredSorted, page, itemsPerPage)
@@ -146,7 +173,10 @@ export function DeptHeadMyDtrModule() {
                 </TableRow>
               ) : (
                 paginatedData.map((row: any) => (
-                  <TableRow key={row.id}>
+                  <TableRow
+                    key={row.id}
+                    className={cn(row.isLeaveDay && "bg-red-100 dark:bg-red-950/40")}
+                  >
                     <TableCell className="font-mono text-sm">{new Date(row.date).toLocaleDateString()}</TableCell>
                     <TableCell className="font-mono text-sm">{formatTime(row.timeIn)}</TableCell>
                     <TableCell className="font-mono text-sm">{formatTime(row.timeOut)}</TableCell>

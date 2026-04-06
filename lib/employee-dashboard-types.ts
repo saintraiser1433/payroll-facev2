@@ -23,6 +23,12 @@ export interface EmployeeData {
       lateMinutes: number
       overtimeMinutes: number
     }>
+    approvedLeaves: Array<{
+      id: string
+      startDate: string
+      endDate: string
+      reason: string | null
+    }>
     payrollItems: Array<{
       id: string
       basicPay: number

@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { isPayslipHiddenDeduction } from '@/lib/payslip-display'
 
 const generatePayslipSchema = z.object({
   payrollItemId: z.string().min(1, 'Payroll item ID is required'),
@@ -62,10 +63,20 @@ export async function POST(request: NextRequest) {
     const tardyDeduction = sumByDeductionName('Tardy')
     const undertimeDeduction = sumByDeductionName('Undertime')
 
+    const positionSalary = await prisma.positionSalary.findFirst({
+      where: { position: payrollItem.employee.position, isActive: true },
+      select: { salaryRate: true },
+    })
+    const monthlyRate = positionSalary?.salaryRate ?? 0
+
+    const payslipDeductionRows = payrollItem.deductions.filter(
+      (d) => !isPayslipHiddenDeduction(d.deductionType?.name),
+    )
+
     // Calculate payslip data
     const payslipData = {
-      companyName: 'Web-based Payroll Management System for Glan White Sand Beach Resort',
-      companyFullName: 'Glan White Sand Beach Resort',
+      companyName: 'Glan White Sand Beach Resort',
+      companyFullName: '',
       period: {
         ...payrollItem.payrollPeriod,
         isThirteenthMonth: payrollItem.payrollPeriod.isThirteenthMonth
@@ -76,11 +87,13 @@ export async function POST(request: NextRequest) {
       holidayPay: payrollItem.holidayPay || 0,
       thirteenthMonthPay: (payrollItem as any).thirteenthMonthPay || 0,
       grossPay: payrollItem.totalEarnings,
-      deductions: payrollItem.deductions,
+      deductions: payslipDeductionRows,
       totalDeductions: payrollItem.totalDeductions,
       netPay: payrollItem.netPay,
       tardyDeduction: tardyDeduction,
       undertimeDeduction: undertimeDeduction,
+      monthlyRate,
+      payslipDate: payrollItem.payrollPeriod.endDate.toISOString(),
       generatedAt: new Date(),
       isThirteenthMonth: payrollItem.payrollPeriod.isThirteenthMonth || false
     }

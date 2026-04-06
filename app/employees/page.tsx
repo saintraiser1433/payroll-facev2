@@ -37,7 +37,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -170,6 +169,7 @@ export default function EmployeesPage() {
     description: "",
     action: () => {},
   })
+  const [nextIdPreview, setNextIdPreview] = useState<string | null>(null)
   const [formData, setFormData] = useState({
     employeeId: "",
     firstName: "",
@@ -229,6 +229,23 @@ export default function EmployeesPage() {
       checkUserDepartment()
     }
   }, [isAdmin, searchTerm, selectedDepartment, activeTab, pagination.page, pagination.limit])
+
+  useEffect(() => {
+    if (!isDialogOpen || !isAdmin || editingEmployee) {
+      setNextIdPreview(null)
+      return
+    }
+    let cancelled = false
+    fetch("/api/employees/next-id")
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled && data.nextEmployeeId) setNextIdPreview(data.nextEmployeeId)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [isDialogOpen, editingEmployee, isAdmin])
 
   const checkUserDepartment = async () => {
     try {
@@ -373,12 +390,14 @@ export default function EmployeesPage() {
       const url = editingEmployee ? `/api/employees/${editingEmployee.id}` : '/api/employees'
       const method = editingEmployee ? 'PUT' : 'POST'
       
+      const { employeeId: _omitEmployeeId, ...payload } = formData
+
       const response = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(payload),
       })
 
       if (!response.ok) {
@@ -816,13 +835,23 @@ export default function EmployeesPage() {
             </p>
           </div>
           {isAdmin && (
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Button onClick={() => setIsDialogOpen(true)}>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Employee
-                </Button>
-              </DialogTrigger>
+            <Dialog
+              open={isDialogOpen}
+              onOpenChange={(open) => {
+                setIsDialogOpen(open)
+                if (!open) resetForm()
+              }}
+            >
+              <Button
+                type="button"
+                onClick={() => {
+                  resetForm()
+                  setIsDialogOpen(true)
+                }}
+              >
+                <Plus className="mr-2 h-4 w-4" />
+                Add Employee
+              </Button>
               <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
                   <DialogTitle>
@@ -840,10 +869,16 @@ export default function EmployeesPage() {
                       <Label htmlFor="employeeId">Employee ID</Label>
                       <Input
                         id="employeeId"
-                        value={formData.employeeId}
-                        onChange={(e) => setFormData({ ...formData, employeeId: e.target.value })}
-                        required
+                        value={editingEmployee ? formData.employeeId : nextIdPreview ?? "Loading…"}
+                        readOnly
+                        disabled
+                        className="bg-muted"
                       />
+                      {!editingEmployee && (
+                        <p className="text-xs text-muted-foreground">
+                          Auto-assigned on save (format {`GWSBR-####`}). This field cannot be edited.
+                        </p>
+                      )}
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="email">Email</Label>
