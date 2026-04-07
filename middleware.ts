@@ -116,7 +116,7 @@ export const config = {
      * - favicon.ico (favicon file)
      * - static files (images, etc.)
      */
-    "/((?!api/auth|api/attendance/qr-scan|api/attendance/enrolled-faces|models/|uploads/|_next/static|_next/image|favicon.ico|logo.png|GWB.png|gwbrlogo.png|trop.jpg|placeholder).*)",
+    "/((?!api/auth|api/attendance/qr-scan|api/attendance/enrolled-faces|models/|uploads/|_next/static|_next/image|favicon.ico|logo.png|GWB.png|gwbrlogo.png|GWSR.png|trop.jpg|placeholder).*)",
   ],
 }
 

@@ -222,42 +222,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Check for overlapping periods - Skip this check for 13th month pay periods
-    // 13th month pay can overlap with any other periods (including other 13th month periods)
-    if (!validatedData.isThirteenthMonth) {
-      const overlappingPeriod = await prisma.payrollPeriod.findFirst({
-        where: {
-          // Only check conflicts with non-13th-month periods
-          isThirteenthMonth: false,
-          OR: [
-            {
-              AND: [
-                { startDate: { lte: validatedData.startDate } },
-                { endDate: { gte: validatedData.startDate } }
-              ]
-            },
-            {
-              AND: [
-                { startDate: { lte: validatedData.endDate } },
-                { endDate: { gte: validatedData.endDate } }
-              ]
-            },
-            {
-              AND: [
-                { startDate: { gte: validatedData.startDate } },
-                { endDate: { lte: validatedData.endDate } }
-              ]
-            }
-          ]
-        }
-      })
-
-      if (overlappingPeriod) {
-        return NextResponse.json(
-          { error: 'Payroll period overlaps with existing period' },
-          { status: 400 }
-        )
-      }
+    // Restrict date conflicts with any existing payroll period
+    const overlappingPeriod = await prisma.payrollPeriod.findFirst({
+      where: {
+        startDate: { lte: validatedData.endDate },
+        endDate: { gte: validatedData.startDate },
+      },
+      select: { id: true, name: true, startDate: true, endDate: true },
+    })
+    if (overlappingPeriod) {
+      return NextResponse.json(
+        {
+          error: `Payroll period overlaps with existing period "${overlappingPeriod.name}".`,
+        },
+        { status: 400 },
+      )
     }
 
     const period = await prisma.payrollPeriod.create({

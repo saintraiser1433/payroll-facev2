@@ -34,6 +34,18 @@ const attendanceInclude = {
   },
 } as const
 
+async function isAttendanceDateLocked(date: Date) {
+  const closed = await prisma.payrollPeriod.findFirst({
+    where: {
+      status: "CLOSED",
+      startDate: { lte: date },
+      endDate: { gte: date },
+    },
+    select: { id: true },
+  })
+  return Boolean(closed)
+}
+
 // PATCH /api/attendance/[id] — Admin only
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -53,6 +65,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     if (!existing) {
       return NextResponse.json({ error: "Attendance not found" }, { status: 404 })
     }
+    if (await isAttendanceDateLocked(existing.date)) {
+      return NextResponse.json(
+        { error: "Attendance in a closed payroll period cannot be edited." },
+        { status: 400 },
+      )
+    }
 
     const nextTimeIn =
       parsed.timeIn !== undefined ? (parsed.timeIn ? new Date(parsed.timeIn) : null) : existing.timeIn
@@ -64,6 +82,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       parsed.breakIn !== undefined ? (parsed.breakIn ? new Date(parsed.breakIn) : null) : existing.breakIn
     const nextBreakMinutes =
       parsed.breakMinutes !== undefined ? parsed.breakMinutes : existing.breakMinutes
+    const computedBreakMinutes =
+      parsed.breakMinutes === undefined && nextBreakOut && nextBreakIn
+        ? Math.max(0, Math.floor((nextBreakIn.getTime() - nextBreakOut.getTime()) / (1000 * 60)))
+        : nextBreakMinutes
 
     let lateMinutes = existing.lateMinutes
     let overtimeMinutes = existing.overtimeMinutes
@@ -99,6 +121,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         ...(parsed.breakOut !== undefined && { breakOut: nextBreakOut }),
         ...(parsed.breakIn !== undefined && { breakIn: nextBreakIn }),
         ...(parsed.breakMinutes !== undefined && { breakMinutes: nextBreakMinutes }),
+        ...(parsed.breakMinutes === undefined && { breakMinutes: computedBreakMinutes }),
         ...(parsed.notes !== undefined && { notes: parsed.notes }),
         lateMinutes,
         overtimeMinutes,
@@ -127,6 +150,16 @@ export async function DELETE(_request: NextRequest, { params }: { params: Promis
     }
 
     const { id } = await params
+    const existing = await prisma.attendance.findUnique({ where: { id }, select: { id: true, date: true } })
+    if (!existing) {
+      return NextResponse.json({ error: "Attendance not found" }, { status: 404 })
+    }
+    if (await isAttendanceDateLocked(existing.date)) {
+      return NextResponse.json(
+        { error: "Attendance in a closed payroll period cannot be deleted." },
+        { status: 400 },
+      )
+    }
     await prisma.attendance.delete({
       where: { id },
     })

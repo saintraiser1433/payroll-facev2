@@ -42,6 +42,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
@@ -58,7 +59,7 @@ interface AttendanceRecord {
   timeOut: string | null
   breakOut?: string | null
   breakIn?: string | null
-  status: 'PRESENT' | 'LATE' | 'ABSENT' | 'OVERTIME'
+  status: 'PRESENT' | 'LATE' | 'ABSENT' | 'OVERTIME' | 'LEAVE'
   lateMinutes: number
   overtimeMinutes: number
   undertimeMinutes: number
@@ -82,6 +83,7 @@ interface AttendanceRecord {
     } | null
     faceSamples?: { slot: number; imagePath: string }[]
   }
+  isLocked?: boolean
 }
 
 interface Employee {
@@ -147,12 +149,21 @@ export default function AttendancePage() {
     timeOut: "",
     breakOut: "",
     breakIn: "",
-    breakMinutes: "",
     notes: "",
     status: "PRESENT" as AttendanceRecord["status"],
   })
   const [deleteTarget, setDeleteTarget] = useState<AttendanceRecord | null>(null)
   const [deleteLoading, setDeleteLoading] = useState(false)
+  const [manualOpen, setManualOpen] = useState(false)
+  const [manualSaving, setManualSaving] = useState(false)
+  const [manualForm, setManualForm] = useState({
+    employeeId: "",
+    date: "",
+    timeIn: "",
+    timeOut: "",
+    status: "PRESENT" as AttendanceRecord["status"],
+    notes: "",
+  })
 
   useEffect(() => {
     fetchAttendanceRecords()
@@ -395,7 +406,7 @@ export default function AttendancePage() {
   }
 
   const formatTime = (dateString: string | null) => {
-    if (!dateString) return 'N/A'
+    if (!dateString) return '—'
     return new Date(dateString).toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit',
@@ -415,6 +426,7 @@ export default function AttendancePage() {
       LATE: { variant: "secondary" as const, label: "Late", icon: AlertTriangle },
       ABSENT: { variant: "destructive" as const, label: "Absent", icon: XCircle },
       OVERTIME: { variant: "outline" as const, label: "Overtime", icon: Timer },
+      LEAVE: { variant: "destructive" as const, label: "Leave", icon: AlertTriangle },
     }
     
     const config = statusConfig[status as keyof typeof statusConfig] || statusConfig.PRESENT
@@ -445,13 +457,20 @@ export default function AttendancePage() {
   }
 
   const openEdit = (record: AttendanceRecord) => {
+    if (record.isLocked) {
+      toast({
+        title: "Locked",
+        description: "Attendance within a closed payroll period cannot be edited.",
+        variant: "destructive",
+      })
+      return
+    }
     setEditRecord(record)
     setEditForm({
       timeIn: toDatetimeLocalValue(record.timeIn),
       timeOut: toDatetimeLocalValue(record.timeOut),
       breakOut: toDatetimeLocalValue(record.breakOut ?? null),
       breakIn: toDatetimeLocalValue(record.breakIn ?? null),
-      breakMinutes: record.breakMinutes != null ? String(record.breakMinutes) : "",
       notes: record.notes ?? "",
       status: record.status,
     })
@@ -462,7 +481,6 @@ export default function AttendancePage() {
     if (!editRecord) return
     setEditSaving(true)
     try {
-      const breakM = editForm.breakMinutes.trim()
       const body: Record<string, unknown> = {
         timeIn: fromDatetimeLocalValue(editForm.timeIn),
         timeOut: fromDatetimeLocalValue(editForm.timeOut),
@@ -471,10 +489,6 @@ export default function AttendancePage() {
         status: editForm.status,
         notes: editForm.notes.trim() || null,
         recalculateFromSchedule: true,
-      }
-      if (breakM !== "") {
-        const n = parseInt(breakM, 10)
-        if (!Number.isNaN(n)) body.breakMinutes = n
       }
       const res = await fetch(`/api/attendance/${editRecord.id}`, {
         method: "PATCH",
@@ -489,6 +503,7 @@ export default function AttendancePage() {
       setEditOpen(false)
       setEditRecord(null)
       await fetchAttendanceRecords()
+      await recalculatePayrollForAttendanceDate(editRecord.date)
     } catch (e) {
       toast({
         title: "Error",
@@ -507,12 +522,83 @@ export default function AttendancePage() {
       const res = await fetch(`/api/attendance/${deleteTarget.id}`, { method: "DELETE" })
       if (!res.ok) throw new Error("Delete failed")
       toast({ title: "Deleted", description: "Attendance record removed." })
+      await recalculatePayrollForAttendanceDate(deleteTarget.date)
       setDeleteTarget(null)
       await fetchAttendanceRecords()
     } catch {
       toast({ title: "Error", description: "Failed to delete record", variant: "destructive" })
     } finally {
       setDeleteLoading(false)
+    }
+  }
+
+  const recalculatePayrollForAttendanceDate = async (_attendanceDateIso: string) => {
+    if (!isAdmin) return
+    try {
+      const periodsRes = await fetch("/api/payroll/periods?status=DRAFT&page=1&limit=200")
+      if (!periodsRes.ok) return
+      const json = await periodsRes.json()
+      const draftPeriods = (json.periods || []).filter((p: any) => p.status === "DRAFT")
+      for (const p of draftPeriods) {
+        await fetch("/api/payroll/calculate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ payrollPeriodId: p.id }),
+        })
+      }
+      toast({ title: "Payroll synced", description: "Draft payroll periods were recalculated." })
+    } catch {
+      // non-blocking background sync
+    }
+  }
+
+  const createManualAttendance = async () => {
+    if (!manualForm.employeeId || !manualForm.date) {
+      toast({ title: "Error", description: "Employee and date are required.", variant: "destructive" })
+      return
+    }
+    setManualSaving(true)
+    try {
+      const payload: any = {
+        employeeId: manualForm.employeeId,
+        date: new Date(`${manualForm.date}T12:00:00`).toISOString(),
+        status: manualForm.status,
+        notes: manualForm.notes || undefined,
+      }
+      if (manualForm.timeIn) {
+        payload.timeIn = new Date(`${manualForm.date}T${manualForm.timeIn}:00`).toISOString()
+      }
+      if (manualForm.timeOut) {
+        payload.timeOut = new Date(`${manualForm.date}T${manualForm.timeOut}:00`).toISOString()
+      }
+
+      const res = await fetch("/api/attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+      const err = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(err.error || "Failed to create attendance")
+      toast({ title: "Created", description: "Manual attendance added." })
+      setManualOpen(false)
+      setManualForm({
+        employeeId: "",
+        date: "",
+        timeIn: "",
+        timeOut: "",
+        status: "PRESENT",
+        notes: "",
+      })
+      await fetchAttendanceRecords()
+      await recalculatePayrollForAttendanceDate(payload.date)
+    } catch (e) {
+      toast({
+        title: "Error",
+        description: e instanceof Error ? e.message : "Failed to create attendance",
+        variant: "destructive",
+      })
+    } finally {
+      setManualSaving(false)
     }
   }
 
@@ -576,19 +662,27 @@ export default function AttendancePage() {
             </p>
           </div>
           <div className="flex items-center space-x-4">
-             {isAdmin && (
-             <Button 
-               onClick={() => {
-                 console.log('Manual stats calculation triggered')
-                 setStatsCalculated(false)
-                 calculateAttendanceStats()
-               }}
-               variant="outline"
-               size="sm"
-             >
-               Recalculate Stats
-             </Button>
-             )}
+            {isAdmin && (
+              <>
+                <Button
+                  onClick={() => setManualOpen(true)}
+                  size="sm"
+                >
+                  Add Attendance
+                </Button>
+                <Button 
+                  onClick={() => {
+                    console.log('Manual stats calculation triggered')
+                    setStatsCalculated(false)
+                    calculateAttendanceStats()
+                  }}
+                  variant="outline"
+                  size="sm"
+                >
+                  Recalculate Stats
+                </Button>
+              </>
+            )}
             <div className="text-right">
               <div className="text-2xl font-bold">
                 {currentTime.toLocaleTimeString('en-US', {
@@ -820,6 +914,7 @@ export default function AttendancePage() {
               <SelectItem value="LATE">Late</SelectItem>
               <SelectItem value="ABSENT">Absent</SelectItem>
               <SelectItem value="OVERTIME">Overtime</SelectItem>
+              <SelectItem value="LEAVE">Leave</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -850,6 +945,21 @@ export default function AttendancePage() {
                       )}
                     </div>
                   </TableHead>
+                  {isAdmin && (
+                    <TableHead
+                      className="cursor-pointer hover:bg-muted/50 select-none"
+                      onClick={() => handleSort("department")}
+                    >
+                      <div className="flex items-center gap-2">
+                        Department
+                        {sortField === 'department' ? (
+                          sortDirection === 'asc' ? <ArrowUp className="h-4 w-4" /> : <ArrowDown className="h-4 w-4" />
+                        ) : (
+                          <ArrowUpDown className="h-4 w-4 opacity-50" />
+                        )}
+                      </div>
+                    </TableHead>
+                  )}
                   <TableHead 
                     className="cursor-pointer hover:bg-muted/50 select-none"
                     onClick={() => handleSort('date')}
@@ -967,7 +1077,7 @@ export default function AttendancePage() {
                     employee: record.employee,
                   })
                   return (
-                    <TableRow key={record.id}>
+                    <TableRow key={record.id} className={record.status === "LEAVE" ? "bg-red-100/80 dark:bg-red-950/40" : ""}>
                       <TableCell>
                         <div className="flex items-center space-x-3">
                           <Avatar className="h-8 w-8">
@@ -987,6 +1097,11 @@ export default function AttendancePage() {
                           </div>
                         </div>
                       </TableCell>
+                      {isAdmin && (
+                        <TableCell>
+                          {record.employee.department?.name || "—"}
+                        </TableCell>
+                      )}
                       <TableCell className="font-mono text-sm">
                         {formatAttendanceTableDate(record.date)}
                       </TableCell>
@@ -1049,6 +1164,8 @@ export default function AttendancePage() {
                               className="h-8 w-8"
                               onClick={() => openEdit(record)}
                               aria-label="Edit attendance"
+                              disabled={record.isLocked}
+                              title={record.isLocked ? "Locked: period is closed" : "Edit attendance"}
                             >
                               <Pencil className="h-4 w-4" />
                             </Button>
@@ -1059,6 +1176,8 @@ export default function AttendancePage() {
                               className="h-8 w-8 text-destructive hover:text-destructive"
                               onClick={() => setDeleteTarget(record)}
                               aria-label="Delete attendance"
+                              disabled={record.isLocked}
+                              title={record.isLocked ? "Locked: period is closed" : "Delete attendance"}
                             >
                               <Trash2 className="h-4 w-4" />
                             </Button>
@@ -1071,7 +1190,7 @@ export default function AttendancePage() {
                 {attendanceRecords.length === 0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={isAdmin ? 14 : 13}
+                      colSpan={isAdmin ? 15 : 13}
                       className="text-center py-8"
                     >
                       <div className="text-muted-foreground">No attendance records found.</div>
@@ -1138,16 +1257,9 @@ export default function AttendancePage() {
                     onChange={(e) => setEditForm((f) => ({ ...f, breakIn: e.target.value }))}
                   />
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="edit-breakMinutes">Break minutes (midbreak total)</Label>
-                  <Input
-                    id="edit-breakMinutes"
-                    type="number"
-                    min={0}
-                    value={editForm.breakMinutes}
-                    onChange={(e) => setEditForm((f) => ({ ...f, breakMinutes: e.target.value }))}
-                  />
-                </div>
+                <p className="text-xs text-muted-foreground">
+                  Break minutes are auto-calculated from Break out and Break in.
+                </p>
                 <div className="grid gap-2">
                   <Label>Status</Label>
                   <Select
@@ -1184,6 +1296,94 @@ export default function AttendancePage() {
               </Button>
               <Button type="button" onClick={saveEdit} disabled={editSaving}>
                 {editSaving ? "Saving…" : "Save"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={manualOpen} onOpenChange={setManualOpen}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Add manual attendance</DialogTitle>
+              <DialogDescription>Create an attendance record for an employee.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-3 py-2">
+              <div className="grid gap-2">
+                <Label>Employee</Label>
+                <Select
+                  value={manualForm.employeeId}
+                  onValueChange={(v) => setManualForm((f) => ({ ...f, employeeId: v }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select employee" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {employees.map((e) => (
+                      <SelectItem key={e.id} value={e.id}>
+                        {e.firstName} {e.lastName} ({e.employeeId})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="grid gap-2">
+                  <Label>Date</Label>
+                  <Input
+                    type="date"
+                    value={manualForm.date}
+                    onChange={(e) => setManualForm((f) => ({ ...f, date: e.target.value }))}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Time in</Label>
+                  <Input
+                    type="time"
+                    value={manualForm.timeIn}
+                    onChange={(e) => setManualForm((f) => ({ ...f, timeIn: e.target.value }))}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Time out</Label>
+                  <Input
+                    type="time"
+                    value={manualForm.timeOut}
+                    onChange={(e) => setManualForm((f) => ({ ...f, timeOut: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Status</Label>
+                <Select
+                  value={manualForm.status}
+                  onValueChange={(v) => setManualForm((f) => ({ ...f, status: v as AttendanceRecord["status"] }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="PRESENT">Present</SelectItem>
+                    <SelectItem value="LATE">Late</SelectItem>
+                    <SelectItem value="ABSENT">Absent</SelectItem>
+                    <SelectItem value="OVERTIME">Overtime</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Notes</Label>
+                <Textarea
+                  rows={3}
+                  value={manualForm.notes}
+                  onChange={(e) => setManualForm((f) => ({ ...f, notes: e.target.value }))}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setManualOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={createManualAttendance} disabled={manualSaving}>
+                {manualSaving ? "Saving..." : "Add"}
               </Button>
             </DialogFooter>
           </DialogContent>

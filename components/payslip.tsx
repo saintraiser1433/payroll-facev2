@@ -127,7 +127,7 @@ export function Payslip({ isOpen, onClose, payslipData }: PayslipProps) {
         <div className="payslip-container bg-white text-black font-mono text-[13px] leading-snug print:p-2">
           <div className="text-center border-b-2 border-black pb-2 mb-3">
             <img
-              src="/gwbrlogo.png"
+              src="/GWSR.png"
               alt="Glan White Sand Beach Resort logo"
               className="mx-auto mb-2 h-12 w-auto object-contain"
             />
@@ -370,7 +370,7 @@ function generatePayslipHTML(payslipData: PayslipData): string {
     <body>
       <div style="max-width:640px;margin:0 auto;">
         <div style="text-align:center;border-bottom:2px solid #000;padding-bottom:8px;margin-bottom:12px;">
-          <img src="/gwbrlogo.png" alt="Glan White Sand Beach Resort logo" style="height:48px;width:auto;object-fit:contain;margin:0 auto 8px auto;" />
+          <img src="/GWSR.png" alt="Glan White Sand Beach Resort logo" style="height:48px;width:auto;object-fit:contain;margin:0 auto 8px auto;" />
           <div style="font-size:15px;font-weight:bold;">${payslipData.companyName}</div>
         </div>
         <div style="display:flex;justify-content:space-between;gap:24px;margin-bottom:12px;font-size:13px;">

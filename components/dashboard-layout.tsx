@@ -47,6 +47,7 @@ const adminNavigation = [
   { name: "Holidays", href: "/holidays", icon: CalendarDays },
   { name: "Payroll", href: "/payroll", icon: DollarSign },
   { name: "Benefits", href: "/benefits", icon: Shield },
+  { name: "Dept Head Requests", href: "/department-head-requests", icon: FileText },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
 ]
 
@@ -62,6 +63,12 @@ const departmentHeadRequestNav = [
   { name: "Overtime request", href: "/department-head-dashboard/requests/overtime", icon: Timer },
   { name: "Cash advance request", href: "/department-head-dashboard/requests/cash-advance", icon: Wallet },
   { name: "Leave request", href: "/department-head-dashboard/requests/leave", icon: CalendarDays },
+]
+
+const departmentHeadMyRequestNav = [
+  { name: "My overtime", href: "/department-head-dashboard/my-requests/overtime", icon: Timer },
+  { name: "My cash advance", href: "/department-head-dashboard/my-requests/cash-advance", icon: Wallet },
+  { name: "My leave", href: "/department-head-dashboard/my-requests/leave", icon: CalendarDays },
 ]
 
 function departmentHeadLinkActive(pathname: string, href: string) {
@@ -94,6 +101,9 @@ function sidebarPageTitle(pathname: string) {
       "/department-head-dashboard/requests/overtime": "Overtime Request",
       "/department-head-dashboard/requests/cash-advance": "Cash Advance Request",
       "/department-head-dashboard/requests/leave": "Leave Request",
+      "/department-head-dashboard/my-requests/overtime": "My Overtime Request",
+      "/department-head-dashboard/my-requests/cash-advance": "My Cash Advance Request",
+      "/department-head-dashboard/my-requests/leave": "My Leave Request",
     }
     return map[pathname] || pathname.replace("/department-head-dashboard/", "").replace(/-/g, " ")
   }
@@ -146,7 +156,7 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-white/10 backdrop-blur overflow-hidden ring-1 ring-white/30">
               <img
-                src="/gwbrlogo.png"
+                src="/GWSR.png"
                 alt="Glan White Sand Beach Resort Logo"
                 className="w-full h-full object-contain"
               />
@@ -283,6 +293,30 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
                     </p>
                     <div className="space-y-1.5">
                       {departmentHeadRequestNav.map((item) => {
+                        const isActive = departmentHeadLinkActive(pathname, item.href)
+                        return (
+                          <Link
+                            key={item.href}
+                            href={item.href}
+                            className={`flex items-center w-full justify-start px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                              isActive
+                                ? "bg-sidebar-primary text-sidebar-primary-foreground shadow-sm"
+                                : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground"
+                            }`}
+                          >
+                            <item.icon className="w-4 h-4 mr-3 shrink-0" />
+                            {item.name}
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="px-3 mb-2 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/60">
+                      My requests
+                    </p>
+                    <div className="space-y-1.5">
+                      {departmentHeadMyRequestNav.map((item) => {
                         const isActive = departmentHeadLinkActive(pathname, item.href)
                         return (
                           <Link

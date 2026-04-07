@@ -7,24 +7,26 @@ import { prisma } from "@/lib/prisma"
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session || session.user.role !== "DEPARTMENT_HEAD") {
+    if (!session || !["DEPARTMENT_HEAD", "ADMIN"].includes(session.user.role)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const deptHeadEmployee = await prisma.employee.findFirst({
-      where: { userId: session.user.id },
-      select: { id: true, departmentId: true },
-    })
-
-    if (!deptHeadEmployee || !deptHeadEmployee.departmentId) {
-      return NextResponse.json({ error: "Department head not found" }, { status: 404 })
+    let where: any = { status: "PENDING" }
+    if (session.user.role === "DEPARTMENT_HEAD") {
+      const deptHeadEmployee = await prisma.employee.findFirst({
+        where: { userId: session.user.id },
+        select: { id: true, departmentId: true },
+      })
+      if (!deptHeadEmployee || !deptHeadEmployee.departmentId) {
+        return NextResponse.json({ error: "Department head not found" }, { status: 404 })
+      }
+      where.employee = { departmentId: deptHeadEmployee.departmentId }
+    } else {
+      where.employee = { user: { role: "DEPARTMENT_HEAD" } }
     }
 
     const cashAdvances = await prisma.cashAdvance.findMany({
-      where: {
-        status: "PENDING",
-        employee: { departmentId: deptHeadEmployee.departmentId },
-      },
+      where,
       orderBy: { createdAt: "desc" },
       include: {
         employee: {

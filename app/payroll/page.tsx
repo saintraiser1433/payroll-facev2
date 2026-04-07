@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useSession } from "next-auth/react"
 import {
   DollarSign,
@@ -24,6 +24,7 @@ import {
   ChevronDown as ChevronDownIcon,
   ToggleLeft,
   ToggleRight,
+  Pencil,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -129,6 +130,29 @@ interface PaginationData {
   pages: number
 }
 
+interface CashAdvancePaymentRow {
+  id: string
+  dateIssued: string
+  approvedAt?: string | null
+  amount: number
+  status: string
+  isPaid: boolean
+  repaymentType: "FULL" | "INSTALLMENT"
+  installmentCount?: number | null
+  interestRate?: number | null
+  totalRepayable?: number | null
+  remainingBalance?: number | null
+  amountPerPeriod?: number | null
+  employee: {
+    id: string
+    employeeId: string
+    firstName: string
+    lastName: string
+    position: string
+    department?: { name: string } | null
+  }
+}
+
 export default function PayrollPage() {
   const { data: session } = useSession()
   const { toast } = useToast()
@@ -207,13 +231,17 @@ export default function PayrollPage() {
   // Payslip state
   const [isPayslipOpen, setIsPayslipOpen] = useState(false)
   const [payslipData, setPayslipData] = useState<any>(null)
+  const [isEditPeriodOpen, setIsEditPeriodOpen] = useState(false)
+  const [editingPeriodId, setEditingPeriodId] = useState<string | null>(null)
   const [periodForm, setPeriodForm] = useState({
     name: "",
     startDate: "",
     endDate: "",
     isThirteenthMonth: false,
   })
+  const [cashAdvancePayments, setCashAdvancePayments] = useState<CashAdvancePaymentRow[]>([])
   const [exporting, setExporting] = useState(false)
+  const lastAutoRecalcPeriodRef = useRef<string | null>(null)
 
   const isEmployee = session?.user?.role === 'EMPLOYEE'
   const isAdmin = session?.user?.role === 'ADMIN'
@@ -261,6 +289,7 @@ export default function PayrollPage() {
     if (isAdmin) {
       fetchDepartments()
       fetchPositions()
+      fetchCashAdvancePayments()
     }
   }, [isAdmin])
 
@@ -268,7 +297,20 @@ export default function PayrollPage() {
     if (selectedPeriod && isAdmin) {
       fetchPayrollItems(selectedPeriod === 'all' ? undefined : selectedPeriod)
     }
-  }, [selectedPeriod, itemsPagination.page, itemsPagination.limit, searchTerm, filters])
+  }, [selectedPeriod, itemsPagination.page, itemsPagination.limit, searchTerm, filters, isAdmin])
+
+  useEffect(() => {
+    if (!isAdmin || selectedPeriod === "all" || !selectedPeriod) {
+      lastAutoRecalcPeriodRef.current = null
+      return
+    }
+    const period = payrollPeriods.find((p) => p.id === selectedPeriod)
+    if (!period || period.status !== "DRAFT") return
+    if (lastAutoRecalcPeriodRef.current === selectedPeriod) return
+    lastAutoRecalcPeriodRef.current = selectedPeriod
+    performCalculatePayroll(selectedPeriod, true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedPeriod, isAdmin, payrollPeriods])
 
   const saveCashAdvancePolicy = async () => {
     setCaPolicySaving(true)
@@ -281,6 +323,10 @@ export default function PayrollPage() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         throw new Error(err.error || "Failed to save")
+      }
+      const draftPeriods = payrollPeriods.filter((p) => p.status === "DRAFT")
+      for (const p of draftPeriods) {
+        await performCalculatePayroll(p.id, true)
       }
       toast({ title: "Saved", description: "Cash advance settings updated." })
     } catch (e) {
@@ -368,6 +414,17 @@ export default function PayrollPage() {
     }
   }
 
+  const fetchCashAdvancePayments = async () => {
+    try {
+      const response = await fetch("/api/payroll/cash-advance-payments")
+      if (!response.ok) throw new Error("Failed to fetch cash advance payments")
+      const data = await response.json()
+      setCashAdvancePayments(data.cashAdvancePayments || [])
+    } catch (error) {
+      console.error("Error fetching cash advance payments:", error)
+    }
+  }
+
   const fetchPayrollItems = async (payrollPeriodId?: string) => {
     try {
       const params = new URLSearchParams()
@@ -420,6 +477,8 @@ export default function PayrollPage() {
         throw new Error(error.error || 'Failed to create payroll period')
       }
 
+      const created = await response.json()
+
       toast({
         title: "Success",
         description: "Payroll period created successfully",
@@ -428,10 +487,52 @@ export default function PayrollPage() {
       setIsCreatePeriodOpen(false)
       setPeriodForm({ name: "", startDate: "", endDate: "", isThirteenthMonth: false })
       fetchPayrollPeriods()
+      if (created?.id) {
+        performCalculatePayroll(created.id, true)
+      }
     } catch (error) {
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : 'An error occurred',
+        variant: "destructive",
+      })
+    }
+  }
+
+  const openEditPeriod = (period: PayrollPeriod) => {
+    if (period.status !== "DRAFT") return
+    setEditingPeriodId(period.id)
+    setPeriodForm({
+      name: period.name,
+      startDate: period.startDate.slice(0, 10),
+      endDate: period.endDate.slice(0, 10),
+      isThirteenthMonth: false,
+    })
+    setIsEditPeriodOpen(true)
+  }
+
+  const handleEditPeriod = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingPeriodId) return
+    try {
+      const response = await fetch(`/api/payroll/periods/${editingPeriodId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(periodForm),
+      })
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}))
+        throw new Error(error.error || "Failed to update payroll period")
+      }
+      toast({ title: "Success", description: "Payroll period updated." })
+      setIsEditPeriodOpen(false)
+      setEditingPeriodId(null)
+      setPeriodForm({ name: "", startDate: "", endDate: "", isThirteenthMonth: false })
+      fetchPayrollPeriods()
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to update payroll period",
         variant: "destructive",
       })
     }
@@ -500,7 +601,7 @@ export default function PayrollPage() {
     }
   }
 
-  const performCalculatePayroll = async (periodId: string) => {
+  const performCalculatePayroll = async (periodId: string, silent = false) => {
     setCalculating(true)
     try {
       const response = await fetch('/api/payroll/calculate', {
@@ -518,12 +619,15 @@ export default function PayrollPage() {
 
       const result = await response.json()
       
-      toast({
-        title: "Success",
-        description: `Payroll processed for ${result.summary.totalEmployees} employees`,
-      })
+      if (!silent) {
+        toast({
+          title: "Success",
+          description: `Payroll processed for ${result.summary.totalEmployees} employees`,
+        })
+      }
 
       fetchPayrollPeriods()
+      fetchCashAdvancePayments()
       if (selectedPeriod === periodId) {
         fetchPayrollItems(periodId)
       }
@@ -751,6 +855,12 @@ export default function PayrollPage() {
     }).format(amount)
   }
 
+  const formatShortDate = (value: string | Date) => {
+    const d = new Date(value)
+    const month = d.toLocaleDateString("en-US", { month: "short" }).toUpperCase()
+    return `${month}-${d.getDate()}-${d.getFullYear()}`
+  }
+
   const getStatusBadge = (status: string) => {
     const statusConfig = {
       DRAFT: { variant: "secondary" as const, label: "Draft", icon: Clock },
@@ -871,6 +981,57 @@ export default function PayrollPage() {
             </Dialog>
           )}
         </div>
+        {isAdmin && (
+          <Dialog open={isEditPeriodOpen} onOpenChange={setIsEditPeriodOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Edit Payroll Period</DialogTitle>
+                <DialogDescription>
+                  You can only edit periods in Draft status.
+                </DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleEditPeriod} className="space-y-4">
+                <div>
+                  <Label htmlFor="edit-name">Period Name</Label>
+                  <Input
+                    id="edit-name"
+                    value={periodForm.name}
+                    onChange={(e) => setPeriodForm({ ...periodForm, name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label htmlFor="edit-startDate">Start Date</Label>
+                    <Input
+                      id="edit-startDate"
+                      type="date"
+                      value={periodForm.startDate}
+                      onChange={(e) => setPeriodForm({ ...periodForm, startDate: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="edit-endDate">End Date</Label>
+                    <Input
+                      id="edit-endDate"
+                      type="date"
+                      value={periodForm.endDate}
+                      onChange={(e) => setPeriodForm({ ...periodForm, endDate: e.target.value })}
+                      required
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setIsEditPeriodOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit">Save Changes</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        )}
 
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -879,6 +1040,7 @@ export default function PayrollPage() {
             <TabsTrigger value="items">
               {isEmployee ? "My Payslips" : "Payroll Items"}
             </TabsTrigger>
+            {isAdmin && <TabsTrigger value="cash-advance-payments">Cash Advance Payments</TabsTrigger>}
           </TabsList>
 
           {/* Payroll Periods Tab */}
@@ -1268,8 +1430,8 @@ export default function PayrollPage() {
                           <TableCell className="font-medium">{period.name}</TableCell>
                           <TableCell>
                             <div className="text-sm">
-                              {new Date(period.startDate).toLocaleDateString()} - {' '}
-                              {new Date(period.endDate).toLocaleDateString()}
+                              {formatShortDate(period.startDate)} to {" "}
+                              {formatShortDate(period.endDate)}
                             </div>
                           </TableCell>
                           <TableCell>{getStatusBadge(period.status)}</TableCell>
@@ -1316,6 +1478,12 @@ export default function PayrollPage() {
                                   <Eye className="mr-2 h-4 w-4" />
                                   View Items
                                 </DropdownMenuItem>
+                                {period.status === "DRAFT" && (
+                                  <DropdownMenuItem onClick={() => openEditPeriod(period)}>
+                                    <Pencil className="mr-2 h-4 w-4" />
+                                    Edit Period
+                                  </DropdownMenuItem>
+                                )}
                                 {period.status === 'DRAFT' && (
                                   <>
                                     {(!period.payrollItems || period.payrollItems.length === 0) ? (
@@ -1393,6 +1561,73 @@ export default function PayrollPage() {
                     onPageChange={handlePeriodsPageChange}
                     onPageSizeChange={handlePeriodsPageSizeChange}
                   />
+                </CardContent>
+              </Card>
+            </TabsContent>
+          )}
+
+          {isAdmin && (
+            <TabsContent value="cash-advance-payments" className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Cash Advance Payments</CardTitle>
+                  <CardDescription>
+                    Track approved cash advances, balances, and payroll deductions.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Employee</TableHead>
+                        <TableHead>Date Issued</TableHead>
+                        <TableHead>Repayment</TableHead>
+                        <TableHead className="text-right">Principal</TableHead>
+                        <TableHead className="text-right">Total Repayable</TableHead>
+                        <TableHead className="text-right">Remaining</TableHead>
+                        <TableHead>Status</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {cashAdvancePayments.map((r) => (
+                        <TableRow key={r.id}>
+                          <TableCell>
+                            <div className="font-medium">
+                              {r.employee.firstName} {r.employee.lastName}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {r.employee.employeeId} · {r.employee.position}
+                            </div>
+                          </TableCell>
+                          <TableCell>{formatShortDate(r.dateIssued)}</TableCell>
+                          <TableCell>
+                            {r.repaymentType === "INSTALLMENT"
+                              ? `Installment (${r.installmentCount ?? 0})`
+                              : "Full"}
+                          </TableCell>
+                          <TableCell className="text-right">{formatCurrency(r.amount)}</TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(r.totalRepayable ?? r.amount)}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {formatCurrency(r.remainingBalance ?? 0)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={r.isPaid ? "default" : "secondary"}>
+                              {r.isPaid ? "Paid" : r.status}
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {cashAdvancePayments.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center text-muted-foreground">
+                            No cash advance payments found.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
                 </CardContent>
               </Card>
             </TabsContent>
@@ -1683,8 +1918,8 @@ export default function PayrollPage() {
                           <div>
                             <div className="font-medium">{item.payrollPeriod.name}</div>
                             <div className="text-sm text-muted-foreground">
-                              {new Date(item.payrollPeriod.startDate).toLocaleDateString()} - {' '}
-                              {new Date(item.payrollPeriod.endDate).toLocaleDateString()}
+                              {formatShortDate(item.payrollPeriod.startDate)} -{" "}
+                              {formatShortDate(item.payrollPeriod.endDate)}
                             </div>
                           </div>
                         </TableCell>
@@ -1815,13 +2050,13 @@ export default function PayrollPage() {
                     <div>
                       <Label className="text-sm text-muted-foreground">Start Date</Label>
                       <p className="font-medium">
-                        {new Date(viewingItem.payrollPeriod.startDate).toLocaleDateString()}
+                        {formatShortDate(viewingItem.payrollPeriod.startDate)}
                       </p>
                     </div>
                     <div>
                       <Label className="text-sm text-muted-foreground">End Date</Label>
                       <p className="font-medium">
-                        {new Date(viewingItem.payrollPeriod.endDate).toLocaleDateString()}
+                        {formatShortDate(viewingItem.payrollPeriod.endDate)}
                       </p>
                     </div>
                   </div>

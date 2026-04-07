@@ -125,7 +125,7 @@ export default function SignInPage() {
           <div className="relative mx-auto flex justify-center px-4">
             <div className="relative rounded-xl bg-white dark:bg-slate-950 px-6 py-3 shadow-lg border border-cyan-200/50 dark:border-cyan-800/50">
               <img
-                src="/gwbrlogo.png"
+                src="/GWSR.png"
                 alt="Glan Whitesand Beach Resort"
                 className="h-14 sm:h-16 w-auto max-w-[min(280px,85vw)] object-contain mx-auto"
                 onError={(e) => {

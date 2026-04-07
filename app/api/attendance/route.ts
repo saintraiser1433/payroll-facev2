@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
+import { expandLeaveRangeToYmdKeys, toYmdLocal } from '@/lib/leave-dates'
 
 function formatScheduleSnapshot(
   schedule: { timeIn: string; timeOut: string } | null | undefined
@@ -24,6 +25,18 @@ const timeInOutSchema = z.object({
   employeeId: z.string().min(1, 'Employee ID is required'),
   type: z.enum(['IN', 'OUT', 'BREAK_OUT', 'BREAK_IN']),
 })
+
+async function isDateInClosedPeriod(date: Date) {
+  const row = await prisma.payrollPeriod.findFirst({
+    where: {
+      status: "CLOSED",
+      startDate: { lte: date },
+      endDate: { gte: date },
+    },
+    select: { id: true },
+  })
+  return Boolean(row)
+}
 
 // GET /api/attendance - Get attendance records
 export async function GET(request: NextRequest) {
@@ -61,7 +74,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    if (status) {
+    if (status && status !== "LEAVE") {
       where.status = status
     }
 
@@ -101,18 +114,123 @@ export async function GET(request: NextRequest) {
             }
           }
         },
-        orderBy: sortField ? { [sortField]: sortDirection } : { date: 'desc' }
+        orderBy: sortField && sortField !== "department" ? { [sortField]: sortDirection } : { date: 'desc' }
       }),
       prisma.attendance.count({ where })
     ])
 
+    const closedPeriods = await prisma.payrollPeriod.findMany({
+      where: { status: "CLOSED" },
+      select: { startDate: true, endDate: true },
+    })
+    const isLocked = (date: Date) =>
+      closedPeriods.some((p) => p.startDate <= date && p.endDate >= date)
+
+    const ymdSeen = new Set(
+      attendances.map((a) => `${a.employeeId}:${toYmdLocal(new Date(a.date))}`),
+    )
+
+    const employeeIdsForLeaves = Array.from(new Set(attendances.map((a) => a.employeeId)))
+    let effectiveStart = startDate ? new Date(startDate) : null
+    let effectiveEnd = endDate ? new Date(endDate) : null
+    if (!effectiveStart || !effectiveEnd) {
+      if (attendances.length > 0) {
+        const times = attendances.map((a) => new Date(a.date).getTime())
+        const minT = Math.min(...times)
+        const maxT = Math.max(...times)
+        if (!effectiveStart) effectiveStart = new Date(minT)
+        if (!effectiveEnd) effectiveEnd = new Date(maxT)
+      } else {
+        const today = new Date()
+        if (!effectiveStart) effectiveStart = new Date(today.getFullYear(), today.getMonth(), 1)
+        if (!effectiveEnd) effectiveEnd = today
+      }
+    }
+
+    const approvedLeaves = employeeIdsForLeaves.length
+      ? await prisma.leaveRequest.findMany({
+          where: {
+            status: "APPROVED",
+            employeeId: { in: employeeIdsForLeaves },
+            startDate: { lte: effectiveEnd! },
+            endDate: { gte: effectiveStart! },
+          },
+          include: {
+            employee: {
+              select: {
+                id: true,
+                employeeId: true,
+                firstName: true,
+                lastName: true,
+                position: true,
+                department: { select: { name: true } },
+                schedule: { select: { timeIn: true, timeOut: true, name: true } },
+                faceSamples: {
+                  where: { slot: 1 },
+                  select: { imagePath: true, slot: true },
+                },
+              },
+            },
+          },
+        })
+      : []
+
+    const leaveRows = approvedLeaves.flatMap((lr) => {
+      const keys = Array.from(expandLeaveRangeToYmdKeys(lr.startDate.toISOString(), lr.endDate.toISOString()))
+      return keys
+        .filter((ymd) => {
+          const day = new Date(`${ymd}T12:00:00`)
+          if (effectiveStart && day < effectiveStart) return false
+          if (effectiveEnd && day > effectiveEnd) return false
+          return !ymdSeen.has(`${lr.employeeId}:${ymd}`)
+        })
+        .map((ymd) => ({
+          id: `leave-${lr.id}-${ymd}`,
+          date: new Date(`${ymd}T12:00:00`),
+          timeIn: null,
+          timeOut: null,
+          breakOut: null,
+          breakIn: null,
+          status: "LEAVE",
+          lateMinutes: 0,
+          overtimeMinutes: 0,
+          undertimeMinutes: 0,
+          breakMinutes: 0,
+          notes: lr.reason ?? null,
+          oldScheduleTime: null,
+          newScheduleTime: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          employeeId: lr.employeeId,
+          employee: lr.employee,
+          isLocked: isLocked(new Date(`${ymd}T12:00:00`)),
+        }))
+    })
+
+    let merged = [
+      ...attendances.map((a) => ({ ...a, isLocked: isLocked(new Date(a.date)) })),
+      ...leaveRows,
+    ]
+
+    if (status === "LEAVE") {
+      merged = merged.filter((a) => a.status === "LEAVE")
+    }
+    if (sortField === "department") {
+      merged.sort((a: any, b: any) => {
+        const av = a.employee?.department?.name ?? ""
+        const bv = b.employee?.department?.name ?? ""
+        return sortDirection === "asc" ? av.localeCompare(bv) : bv.localeCompare(av)
+      })
+    } else if (!sortField || sortField === "date") {
+      merged.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    }
     return NextResponse.json({
-      attendances,
+      attendances: merged,
       pagination: {
         page,
         limit,
-        total,
-        pages: Math.ceil(total / limit)
+        total: Math.max(total, merged.length),
+        pages: Math.ceil(Math.max(total, merged.length) / limit)
       }
     })
   } catch (error) {
@@ -439,6 +557,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'Attendance record already exists for this date' },
         { status: 400 }
+      )
+    }
+
+    if (await isDateInClosedPeriod(validatedData.date)) {
+      return NextResponse.json(
+        { error: "Cannot add attendance inside a closed payroll period." },
+        { status: 400 },
       )
     }
 

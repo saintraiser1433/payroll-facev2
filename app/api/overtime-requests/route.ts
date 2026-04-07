@@ -14,7 +14,7 @@ const createOvertimeRequestSchema = z.object({
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session || session.user.role !== "EMPLOYEE") {
+    if (!session || !["EMPLOYEE", "DEPARTMENT_HEAD"].includes(session.user.role)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 

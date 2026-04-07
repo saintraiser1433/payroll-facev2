@@ -28,11 +28,17 @@ export function recalculateAttendanceFromSchedule(
   const [scheduleStartHour, scheduleStartMin] = schedule.timeIn.split(":").map(Number)
   const [scheduleEndHour, scheduleEndMin] = schedule.timeOut.split(":").map(Number)
 
-  const scheduleStart = new Date(attendanceDate)
+  // Anchor schedule to the edited time-in day to avoid timezone/date-shift mismatch.
+  const scheduleBase = new Date(timeIn)
+  const scheduleStart = new Date(scheduleBase)
   scheduleStart.setHours(scheduleStartHour, scheduleStartMin, 0, 0)
 
-  const scheduleEnd = new Date(attendanceDate)
+  const scheduleEnd = new Date(scheduleBase)
   scheduleEnd.setHours(scheduleEndHour, scheduleEndMin, 0, 0)
+  if (scheduleEnd < scheduleStart) {
+    // Night shift schedule crossing midnight.
+    scheduleEnd.setDate(scheduleEnd.getDate() + 1)
+  }
 
   let lateMinutes = 0
   let status: AttendanceStatus = "PRESENT"

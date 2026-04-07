@@ -38,6 +38,28 @@ export async function POST(
       return NextResponse.json({ error: 'Cannot close payroll period without payroll items' }, { status: 400 })
     }
 
+    // Restrict close when there are invalid timesheets in range.
+    // Exception: leave entries are allowed even with blank times.
+    const invalidTimesheets = await prisma.attendance.findMany({
+      where: {
+        date: {
+          gte: payrollPeriod.startDate,
+          lte: payrollPeriod.endDate,
+        },
+        employeeId: { in: payrollPeriod.payrollItems.map((p) => p.employeeId) },
+        status: { not: "LEAVE" as any },
+        OR: [{ timeIn: null }, { timeOut: null }],
+      },
+      select: { id: true },
+      take: 1,
+    })
+    if (invalidTimesheets.length > 0) {
+      return NextResponse.json(
+        { error: "There are invalid timesheets. Please fix them before closing this period." },
+        { status: 400 },
+      )
+    }
+
     // Close the payroll period
     const updatedPeriod = await prisma.payrollPeriod.update({
       where: { id },

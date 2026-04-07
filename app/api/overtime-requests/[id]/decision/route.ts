@@ -13,26 +13,26 @@ const decisionSchema = z.object({
 export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session || session.user.role !== "DEPARTMENT_HEAD") {
+    if (!session || !["DEPARTMENT_HEAD", "ADMIN"].includes(session.user.role)) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
     const body = await request.json()
     const { decision, approvedMinutes } = decisionSchema.parse(body)
 
-    const deptHeadEmployee = await prisma.employee.findFirst({
+    const actorEmployee = await prisma.employee.findFirst({
       where: { userId: session.user.id },
       select: { id: true, departmentId: true },
     })
-    if (!deptHeadEmployee || !deptHeadEmployee.departmentId) {
-      return NextResponse.json({ error: "Department head not found" }, { status: 404 })
+    if (!actorEmployee) {
+      return NextResponse.json({ error: "Approver employee not found" }, { status: 404 })
     }
 
     const overtimeRequest = await prisma.overtimeRequest.findUnique({
       where: { id: params.id },
       include: {
         employee: {
-          select: { id: true, departmentId: true },
+          select: { id: true, departmentId: true, userId: true },
         },
       },
     })
@@ -41,8 +41,21 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
       return NextResponse.json({ error: "Overtime request not found" }, { status: 404 })
     }
 
-    if (overtimeRequest.employee.departmentId !== deptHeadEmployee.departmentId) {
-      return NextResponse.json({ error: "Unauthorized to approve this request" }, { status: 403 })
+    if (session.user.role === "DEPARTMENT_HEAD") {
+      if (overtimeRequest.employee.departmentId !== actorEmployee.departmentId) {
+        return NextResponse.json({ error: "Unauthorized to approve this request" }, { status: 403 })
+      }
+    } else {
+      const reqUser = await prisma.user.findUnique({
+        where: { id: overtimeRequest.employee.userId ?? "" },
+        select: { role: true },
+      })
+      if (reqUser?.role !== "DEPARTMENT_HEAD") {
+        return NextResponse.json(
+          { error: "Admin approval here is for department-head requests only." },
+          { status: 403 },
+        )
+      }
     }
 
     const updated = await prisma.overtimeRequest.update({
@@ -52,13 +65,13 @@ export async function POST(request: NextRequest, { params }: { params: { id: str
           ? {
               status: "APPROVED",
               approvedAt: new Date(),
-              approvedById: deptHeadEmployee.id,
+              approvedById: actorEmployee.id,
               approvedMinutes: approvedMinutes ?? overtimeRequest.requestedMinutes,
             }
           : {
               status: "REJECTED",
               approvedAt: new Date(),
-              approvedById: deptHeadEmployee.id,
+              approvedById: actorEmployee.id,
               approvedMinutes: 0,
             },
     })

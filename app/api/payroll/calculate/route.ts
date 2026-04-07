@@ -370,14 +370,41 @@ export async function POST(request: NextRequest) {
           approvedMinutes: req.approvedMinutes || 0,
         }))
 
+        const computeLateAndUndertime = (attendance: { timeIn: Date; timeOut: Date }) => {
+          if (!employee.schedule) return { lateMin: 0, undertimeMin: 0 }
+          const [scheduleStartHour, scheduleStartMin] = employee.schedule.timeIn.split(":").map(Number)
+          const [scheduleEndHour, scheduleEndMin] = employee.schedule.timeOut.split(":").map(Number)
+
+          // Anchor schedule to the actual worked day to avoid timezone/date shifts.
+          const scheduleBase = new Date(attendance.timeIn)
+          const scheduleStart = new Date(scheduleBase)
+          scheduleStart.setHours(scheduleStartHour, scheduleStartMin, 0, 0)
+
+          const scheduleEnd = new Date(scheduleBase)
+          scheduleEnd.setHours(scheduleEndHour, scheduleEndMin, 0, 0)
+          if (scheduleEnd < scheduleStart) {
+            scheduleEnd.setDate(scheduleEnd.getDate() + 1)
+          }
+
+          const lateMin =
+            attendance.timeIn > scheduleStart
+              ? Math.floor((attendance.timeIn.getTime() - scheduleStart.getTime()) / (1000 * 60))
+              : 0
+          const undertimeMin =
+            attendance.timeOut < scheduleEnd
+              ? Math.floor((scheduleEnd.getTime() - attendance.timeOut.getTime()) / (1000 * 60))
+              : 0
+          return { lateMin: Math.max(0, lateMin), undertimeMin: Math.max(0, undertimeMin) }
+        }
+
         for (const attendance of employee.attendances) {
           if (attendance.timeIn && attendance.timeOut && employee.schedule) {
-            if (attendance.lateMinutes > 0) {
-              totalLateMinutes += attendance.lateMinutes
-            }
-            if (attendance.undertimeMinutes > 0) {
-              totalUndertimeMinutes += attendance.undertimeMinutes
-            }
+            const { lateMin, undertimeMin } = computeLateAndUndertime({
+              timeIn: attendance.timeIn,
+              timeOut: attendance.timeOut,
+            })
+            totalLateMinutes += lateMin
+            totalUndertimeMinutes += undertimeMin
             const creditedOt = creditedOvertimeMinutesForDay(
               new Date(attendance.date),
               attendance.overtimeMinutes || 0,
@@ -392,11 +419,15 @@ export async function POST(request: NextRequest) {
         undertimePhp = 0
         for (const attendance of employee.attendances) {
           if (attendance.timeIn && attendance.timeOut && employee.schedule) {
-            if ((attendance.lateMinutes || 0) > 0) {
-              tardyPhp += ((attendance.lateMinutes || 0) / scheduleDurationMinutes) * dailyRate
+            const { lateMin, undertimeMin } = computeLateAndUndertime({
+              timeIn: attendance.timeIn,
+              timeOut: attendance.timeOut,
+            })
+            if (lateMin > 0) {
+              tardyPhp += (lateMin / scheduleDurationMinutes) * dailyRate
             }
-            if ((attendance.undertimeMinutes || 0) > 0) {
-              undertimePhp += ((attendance.undertimeMinutes || 0) / scheduleDurationMinutes) * dailyRate
+            if (undertimeMin > 0) {
+              undertimePhp += (undertimeMin / scheduleDurationMinutes) * dailyRate
             }
           }
         }
