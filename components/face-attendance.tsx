@@ -34,6 +34,11 @@ export function FaceRecognitionAttendance() {
   const [message, setMessage] = useState<{ type: "success" | "error" | "info"; text: string } | null>(null)
   const [autoDetectSupported, setAutoDetectSupported] = useState(false)
 
+  const isSubmittingRef = useRef(false)
+  const isDetectingRef = useRef(false)
+  isSubmittingRef.current = isSubmitting
+  isDetectingRef.current = isDetecting
+
   useEffect(() => {
     let cancelled = false
 
@@ -251,37 +256,61 @@ export function FaceRecognitionAttendance() {
     if (!autoDetectSupported) return
     if (!faceApiRef.current || !modelReadyRef.current || !matcherRef.current) return
 
-    const loop = async () => {
-      rafRef.current = requestAnimationFrame(loop)
+    let cancelled = false
+    const faceapi = faceApiRef.current
+    const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 })
 
-      const faceapi = faceApiRef.current
+    const scheduleNext = () => {
+      if (cancelled) return
+      if (!faceApiRef.current || !modelReadyRef.current || !matcherRef.current) return
+      rafRef.current = requestAnimationFrame(() => {
+        void tick()
+      })
+    }
+
+    const tick = async () => {
+      if (cancelled) return
+
       const video = videoRef.current
-      const matcher = matcherRef.current
-      if (!faceapi || !video || !matcher) return
-      if (video.readyState < 2) return
-      if (isSubmitting || isDetecting) return
-
-      const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.5 })
-
-      if (!selectedAction) {
-        try {
-          const light = await faceapi.detectSingleFace(video, opts)
-          const l = light as { detection?: { box: FaceBoundingBox }; box?: FaceBoundingBox } | undefined
-          drawFaceBox(l?.detection?.box ?? l?.box ?? null)
-        } catch {
-          faceApiRef.current = null
-          modelReadyRef.current = false
-          setAutoDetectSupported(false)
-        }
-        consecutiveFaceFramesRef.current = 0
+      const api = faceApiRef.current
+      const match = matcherRef.current
+      if (!api || !match) return
+      if (!video) {
+        scheduleNext()
         return
       }
 
-      const now = Date.now()
-      if (now < cooldownUntilRef.current) return
+      let keepLooping = true
 
       try {
-        const face = await faceapi.detectSingleFace(video, opts).withFaceLandmarks().withFaceDescriptor()
+        if (video.readyState < 2 || isSubmittingRef.current || isDetectingRef.current) {
+          scheduleNext()
+          return
+        }
+
+        if (!selectedAction) {
+          try {
+            const light = await api.detectSingleFace(video, opts)
+            const l = light as { detection?: { box: FaceBoundingBox }; box?: FaceBoundingBox } | undefined
+            drawFaceBox(l?.detection?.box ?? l?.box ?? null)
+          } catch {
+            faceApiRef.current = null
+            modelReadyRef.current = false
+            setAutoDetectSupported(false)
+            keepLooping = false
+          }
+          consecutiveFaceFramesRef.current = 0
+          if (keepLooping) scheduleNext()
+          return
+        }
+
+        const now = Date.now()
+        if (now < cooldownUntilRef.current) {
+          scheduleNext()
+          return
+        }
+
+        const face = await api.detectSingleFace(video, opts).withFaceLandmarks().withFaceDescriptor()
         drawFaceBox(face?.detection?.box ?? null)
 
         if (face?.descriptor) {
@@ -291,17 +320,23 @@ export function FaceRecognitionAttendance() {
           setRecognized(null)
         }
 
-        // Require stable face for a few frames then auto-submit.
         if (consecutiveFaceFramesRef.current >= 8) {
-          if (!face?.descriptor) return
-          const best = matcher.findBestMatch(face.descriptor)
+          if (!face?.descriptor) {
+            scheduleNext()
+            return
+          }
+          const best = match.findBestMatch(face.descriptor)
           if (best.label === "unknown") {
             setMessage({ type: "error", text: "Face not recognized. Please register face samples." })
             cooldownUntilRef.current = now + 4000
+            scheduleNext()
             return
           }
           const meta = labelMapRef.current.get(best.label)
-          if (!meta) return
+          if (!meta) {
+            scheduleNext()
+            return
+          }
 
           consecutiveFaceFramesRef.current = 0
           cooldownUntilRef.current = now + 8000
@@ -312,15 +347,19 @@ export function FaceRecognitionAttendance() {
         faceApiRef.current = null
         modelReadyRef.current = false
         setAutoDetectSupported(false)
+        keepLooping = false
       }
+
+      if (keepLooping) scheduleNext()
     }
 
-    rafRef.current = requestAnimationFrame(loop)
+    scheduleNext()
     return () => {
+      cancelled = true
       if (rafRef.current) cancelAnimationFrame(rafRef.current)
       rafRef.current = null
     }
-  }, [autoDetectSupported, selectedAction, isSubmitting, isDetecting])
+  }, [autoDetectSupported, selectedAction])
 
   return (
     <Card className="w-full bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-2 border-cyan-200/50 dark:border-cyan-700/50 shadow-2xl">

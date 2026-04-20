@@ -47,7 +47,7 @@ const adminNavigation = [
   { name: "Holidays", href: "/holidays", icon: CalendarDays },
   { name: "Payroll", href: "/payroll", icon: DollarSign },
   { name: "Benefits", href: "/benefits", icon: Shield },
-  { name: "Dept Head Requests", href: "/department-head-requests", icon: FileText },
+  { name: "Requests", href: "/department-head-requests", icon: FileText },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
 ]
 
@@ -61,7 +61,6 @@ const departmentHeadPayrollNav = [
 
 const departmentHeadRequestNav = [
   { name: "Overtime request", href: "/department-head-dashboard/requests/overtime", icon: Timer },
-  { name: "Cash advance request", href: "/department-head-dashboard/requests/cash-advance", icon: Wallet },
   { name: "Leave request", href: "/department-head-dashboard/requests/leave", icon: CalendarDays },
 ]
 
@@ -99,7 +98,6 @@ function sidebarPageTitle(pathname: string) {
       "/department-head-dashboard/my-dtr": "My DTR",
       "/department-head-dashboard/my-payslip": "My Payslip",
       "/department-head-dashboard/requests/overtime": "Overtime Request",
-      "/department-head-dashboard/requests/cash-advance": "Cash Advance Request",
       "/department-head-dashboard/requests/leave": "Leave Request",
       "/department-head-dashboard/my-requests/overtime": "My Overtime Request",
       "/department-head-dashboard/my-requests/cash-advance": "My Cash Advance Request",

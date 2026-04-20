@@ -206,21 +206,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Only one open (DRAFT) regular period at a time
-    if (!validatedData.isThirteenthMonth) {
-      const openDraft = await prisma.payrollPeriod.findFirst({
-        where: { status: 'DRAFT', isThirteenthMonth: false },
-      })
-      if (openDraft) {
-        return NextResponse.json(
-          {
-            error:
-              'There is already an open payroll period. Close it before creating another regular period.',
-          },
-          { status: 400 },
-        )
-      }
-    }
+    // Multiple DRAFT periods are allowed; overlapping date ranges are blocked below.
 
     // Restrict date conflicts with any existing payroll period
     const overlappingPeriod = await prisma.payrollPeriod.findFirst({

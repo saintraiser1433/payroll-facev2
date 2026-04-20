@@ -32,7 +32,11 @@ import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { useEmployeeRequests } from "@/hooks/use-employee-requests"
 import { useClientDataTable } from "@/hooks/use-client-data-table"
-import { formatCurrency } from "@/components/employee/employee-ui-helpers"
+import {
+  employeeSelfServiceRequestIntroLine,
+  formatCurrency,
+  submittedEmployeeRequestToastDescription,
+} from "@/components/employee/employee-ui-helpers"
 import {
   AdminStylePrimaryCell,
   AdminStyleStatusBadge,
@@ -178,7 +182,10 @@ export function CashAdvanceModule() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.error || "Failed to submit cash advance request")
 
-      toast({ title: "Submitted", description: "Cash advance request sent to Dept Head." })
+      toast({
+        title: "Submitted",
+        description: submittedEmployeeRequestToastDescription("cashAdvance", session?.user?.role),
+      })
       resetForm()
       setFormOpen(false)
       fetchMyRequests()
@@ -199,7 +206,9 @@ export function CashAdvanceModule() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Cash advance</h1>
-          <p className="text-muted-foreground mt-1">Apply for a cash advance through your department head</p>
+          <p className="text-muted-foreground mt-1">
+            {employeeSelfServiceRequestIntroLine("cashAdvance", session?.user?.role)}
+          </p>
           {hasBlockingCashAdvance && (
             <p className="text-sm text-amber-700 dark:text-amber-400 mt-2">
               You already have a pending or unpaid cash advance. You can submit a new request after it is rejected or fully

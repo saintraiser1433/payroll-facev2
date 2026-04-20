@@ -116,3 +116,43 @@ export function paginateData(data: any[], page: number, itemsPerPage: number) {
     totalItems: data.length,
   }
 }
+
+export type EmployeeSelfServiceRequestKind = "leave" | "overtime" | "cashAdvance"
+
+/** Employees → department head; department heads → admin (matches pending-request APIs). */
+export function submittedEmployeeRequestToastDescription(
+  kind: EmployeeSelfServiceRequestKind,
+  userRole: string | undefined,
+): string {
+  const toAdmin = userRole === "DEPARTMENT_HEAD"
+  if (kind === "leave") {
+    return toAdmin
+      ? "Leave request submitted for administrator approval."
+      : "Leave request sent to your department head."
+  }
+  if (kind === "overtime") {
+    return toAdmin
+      ? "Overtime request submitted for administrator approval."
+      : "Overtime request sent to your department head."
+  }
+  return "Cash advance request submitted for administrator approval."
+}
+
+export function employeeSelfServiceRequestIntroLine(
+  kind: "overtime" | "cashAdvance",
+  userRole: string | undefined,
+): string {
+  const toAdmin = userRole === "DEPARTMENT_HEAD"
+  if (kind === "overtime") {
+    return toAdmin
+      ? "Submit overtime requests for administrator approval."
+      : "Submit overtime requests to your department head."
+  }
+  return "Apply for a cash advance for administrator approval."
+}
+
+export function overtimeNewRequestDialogDescription(userRole: string | undefined): string {
+  return userRole === "DEPARTMENT_HEAD"
+    ? "Date, duration, and optional reason. Sent to the administrator for approval."
+    : "Date, duration, and optional reason. Sent to your department head for approval."
+}

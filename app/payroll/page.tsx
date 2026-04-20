@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
+import type { ReactNode } from "react"
 import { useSession } from "next-auth/react"
 import {
   DollarSign,
@@ -219,7 +220,15 @@ export default function PayrollPage() {
     total: 0,
     pages: 0,
   })
-  const [confirmDialog, setConfirmDialog] = useState({
+  const [closePreviewLoading, setClosePreviewLoading] = useState(false)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean
+    title: string
+    description: ReactNode
+    confirmText?: string
+    variant?: "default" | "destructive"
+    action: () => void | Promise<void>
+  }>({
     open: false,
     title: "",
     description: "",
@@ -557,13 +566,69 @@ export default function PayrollPage() {
   }
 
 
-  const handleCloseEntry = (periodId: string, periodName: string) => {
-    setConfirmDialog({
-      open: true,
-      title: "Close Payroll Period",
-      description: `Are you sure you want to close "${periodName}"? Once closed, this payroll period cannot be reopened.`,
-      action: () => performCloseEntry(periodId),
-    })
+  const handleCloseEntry = async (periodId: string, periodName: string) => {
+    setClosePreviewLoading(true)
+    try {
+      const res = await fetch(`/api/payroll/periods/${periodId}/close-preview`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        toast({
+          title: "Error",
+          description: (data as { error?: string }).error || "Could not load close preview.",
+          variant: "destructive",
+        })
+        return
+      }
+      const count = (data as { invalidCount?: number }).invalidCount ?? 0
+      const preview = Array.isArray((data as { invalidTimesheets?: unknown[] }).invalidTimesheets)
+        ? ((data as { invalidTimesheets: Array<Record<string, string>> }).invalidTimesheets)
+        : []
+      const hasIssues = Boolean((data as { hasBlockingIssues?: boolean }).hasBlockingIssues)
+
+      const description: ReactNode = hasIssues ? (
+        <>
+          <p className="text-foreground mb-2">
+            There {count === 1 ? "is" : "are"} <strong>{count}</strong> scheduled work day(s) with missing time in or
+            out.
+          </p>
+          <p className="mb-3">
+            If you continue, those attendance rows are <strong>not included</strong> when payroll is recalculated for
+            this period, then the period closes. Totals may change.
+          </p>
+          <ul className="max-h-40 overflow-y-auto space-y-1 rounded-md border bg-background/80 p-2 pl-5 text-foreground list-disc text-xs">
+            {preview.map((r) => (
+              <li key={r.attendanceId}>
+                {r.employeeCode} · {r.date} · {r.status}
+              </li>
+            ))}
+          </ul>
+          {count > preview.length ? (
+            <p className="text-xs text-muted-foreground mt-2">Showing {preview.length} of {count}.</p>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <p className="mb-2">
+            All timesheets look clean for this period (no missing punches on scheduled work days for employees in this
+            payroll).
+          </p>
+          <p>
+            Close <strong>{periodName}</strong>? This cannot be undone.
+          </p>
+        </>
+      )
+
+      setConfirmDialog({
+        open: true,
+        title: hasIssues ? "Incomplete timesheets" : "Close payroll period",
+        description,
+        confirmText: hasIssues ? "Close anyway" : "Close period",
+        variant: hasIssues ? "destructive" : "default",
+        action: () => performCloseEntry(periodId, { bypassInvalidTimesheets: hasIssues }),
+      })
+    } finally {
+      setClosePreviewLoading(false)
+    }
   }
 
   const handleToggleDeductions = async (periodId: string, currentStatus: boolean) => {
@@ -642,29 +707,38 @@ export default function PayrollPage() {
     }
   }
 
-  const performCloseEntry = async (periodId: string) => {
+  const performCloseEntry = async (
+    periodId: string,
+    opts?: { bypassInvalidTimesheets?: boolean },
+  ) => {
     setCalculating(true)
     try {
       const response = await fetch(`/api/payroll/periods/${periodId}/close`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bypassInvalidTimesheets: opts?.bypassInvalidTimesheets === true,
+        }),
       })
 
+      const payload = await response.json().catch(() => ({}))
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to close payroll entry')
+        throw new Error((payload as { error?: string }).error || "Failed to close payroll entry")
       }
 
+      const excluded = (payload as { excludedAttendanceCount?: number }).excludedAttendanceCount ?? 0
       toast({
         title: "Success",
-        description: "Payroll period closed successfully",
+        description:
+          excluded > 0
+            ? `Period closed. Payroll was recalculated excluding ${excluded} incomplete timesheet row(s).`
+            : "Payroll period closed successfully.",
       })
 
-      // Refresh data
       fetchPayrollPeriods()
       fetchPayrollItems()
     } catch (error) {
-      console.error('Error closing payroll entry:', error)
+      console.error("Error closing payroll entry:", error)
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to close payroll entry",
@@ -1503,9 +1577,9 @@ export default function PayrollPage() {
                                           <RefreshCw className="mr-2 h-4 w-4" />
                                           Recalculate
                                         </DropdownMenuItem>
-                                        <DropdownMenuItem 
-                                          onClick={() => handleCloseEntry(period.id, period.name)}
-                                          disabled={calculating}
+                                        <DropdownMenuItem
+                                          onClick={() => void handleCloseEntry(period.id, period.name)}
+                                          disabled={calculating || closePreviewLoading}
                                         >
                                           <CheckCircle className="mr-2 h-4 w-4" />
                                           Close Period
@@ -1989,14 +2063,12 @@ export default function PayrollPage() {
         {/* Confirmation Dialog */}
         <ConfirmationDialog
           open={confirmDialog.open}
-          onOpenChange={(open) => setConfirmDialog(prev => ({ ...prev, open }))}
+          onOpenChange={(open) => setConfirmDialog((prev) => ({ ...prev, open }))}
           title={confirmDialog.title}
           description={confirmDialog.description}
-          confirmText="Confirm"
-          onConfirm={() => {
-            confirmDialog.action()
-            setConfirmDialog(prev => ({ ...prev, open: false }))
-          }}
+          confirmText={confirmDialog.confirmText ?? "Confirm"}
+          variant={confirmDialog.variant ?? "default"}
+          onConfirm={() => confirmDialog.action()}
         />
 
         {/* View Details Dialog */}

@@ -38,12 +38,7 @@ export async function GET() {
             employee: { departmentId: deptId },
           },
         }),
-        prisma.cashAdvance.count({
-          where: {
-            status: "PENDING",
-            employee: { departmentId: deptId },
-          },
-        }),
+        Promise.resolve(0),
       ])
       return NextResponse.json({ overtime, leave, cashAdvance })
     }
@@ -120,6 +115,29 @@ export async function GET() {
         leave,
         cashAdvance,
         decisionAlerts,
+      })
+    }
+
+    if (role === "ADMIN") {
+      const [overtime, leave, cashAdvance, draftPeriods] = await Promise.all([
+        prisma.overtimeRequest.count({
+          where: { status: "PENDING", employee: { user: { role: "DEPARTMENT_HEAD" } } },
+        }),
+        prisma.leaveRequest.count({
+          where: { status: "PENDING", employee: { user: { role: "DEPARTMENT_HEAD" } } },
+        }),
+        prisma.cashAdvance.count({
+          where: { status: "PENDING" },
+        }),
+        prisma.payrollPeriod.count({
+          where: { status: "DRAFT" },
+        }),
+      ])
+      return NextResponse.json({
+        overtime,
+        leave,
+        cashAdvance,
+        draftPeriods,
       })
     }
 

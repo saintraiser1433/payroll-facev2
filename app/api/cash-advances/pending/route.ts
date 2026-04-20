@@ -7,23 +7,12 @@ import { prisma } from "@/lib/prisma"
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session || !["DEPARTMENT_HEAD", "ADMIN"].includes(session.user.role)) {
+    if (!session || session.user.role !== "ADMIN") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    let where: any = { status: "PENDING" }
-    if (session.user.role === "DEPARTMENT_HEAD") {
-      const deptHeadEmployee = await prisma.employee.findFirst({
-        where: { userId: session.user.id },
-        select: { id: true, departmentId: true },
-      })
-      if (!deptHeadEmployee || !deptHeadEmployee.departmentId) {
-        return NextResponse.json({ error: "Department head not found" }, { status: 404 })
-      }
-      where.employee = { departmentId: deptHeadEmployee.departmentId }
-    } else {
-      where.employee = { user: { role: "DEPARTMENT_HEAD" } }
-    }
+    // Admin approves all pending cash advances (employees and department heads).
+    const where: { status: "PENDING" } = { status: "PENDING" }
 
     const cashAdvances = await prisma.cashAdvance.findMany({
       where,

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Search, Eye } from "lucide-react"
+import { Search, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -52,7 +52,7 @@ export function DeptHeadOvertimeRequestsModule() {
   const [search, setSearch] = useState("")
   const [sortField] = useState("requestDate")
   const [sortDir] = useState<"asc" | "desc">("desc")
-  const [review, setReview] = useState<OtRequest | null>(null)
+  const [active, setActive] = useState<OtRequest | null>(null)
   const [acting, setActing] = useState(false)
   const [statusTab, setStatusTab] = useState("all")
 
@@ -95,21 +95,21 @@ export function DeptHeadOvertimeRequestsModule() {
   const { paginatedData, totalItems } = paginateData(filtered, page, itemsPerPage)
 
   const decide = async (decision: "APPROVE" | "REJECT") => {
-    if (!review) return
+    if (!active) return
     try {
       setActing(true)
-      const res = await fetch(`/api/overtime-requests/${review.id}/decision`, {
+      const res = await fetch(`/api/overtime-requests/${active.id}/decision`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           decision,
-          approvedMinutes: decision === "APPROVE" ? review.requestedMinutes : undefined,
+          approvedMinutes: decision === "APPROVE" ? active.requestedMinutes : undefined,
         }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.error || "Failed to update")
       toast({ title: "Updated", description: `Request ${decision === "APPROVE" ? "approved" : "rejected"}.` })
-      setReview(null)
+      setActive(null)
       load()
     } catch (e) {
       toast({
@@ -207,9 +207,9 @@ export function DeptHeadOvertimeRequestsModule() {
                         <Badge variant={statusBadgeVariant(row.raw.status)}>{row.raw.status}</Badge>
                       </TableCell>
                       <TableCell>
-                        <Button variant="outline" size="sm" onClick={() => setReview(row.raw)}>
-                          <Eye className="w-4 h-4 mr-1" />
-                          {row.raw.status === "PENDING" ? "Review" : "View"}
+                        <Button variant="outline" size="sm" onClick={() => setActive(row.raw)}>
+                          <FileText className="w-4 h-4 mr-1" />
+                          Details
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -229,38 +229,41 @@ export function DeptHeadOvertimeRequestsModule() {
         </CardContent>
       </Card>
 
-      <Dialog open={!!review} onOpenChange={(o) => !o && setReview(null)}>
-        <DialogContent>
+      <Dialog open={!!active} onOpenChange={(o) => !o && setActive(null)}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Overtime request</DialogTitle>
+            <DialogTitle>Overtime request details</DialogTitle>
             <DialogDescription>
-              {review && (
+              {active && (
                 <>
-                  {review.employee.firstName} {review.employee.lastName} — {review.requestedMinutes} minutes on{" "}
-                  {new Date(review.requestDate).toLocaleDateString()}
+                  {active.employee.firstName} {active.employee.lastName} — {active.requestedMinutes} minutes on{" "}
+                  {new Date(active.requestDate).toLocaleDateString()}
                 </>
               )}
             </DialogDescription>
           </DialogHeader>
-          {review && (
-            <div className="space-y-2 text-sm">
-              <p>
-                <span className="text-muted-foreground">Status: </span>
-                <Badge variant={statusBadgeVariant(review.status)} className="ml-1">
-                  {review.status}
+          {active && (
+            <div className="space-y-3 text-sm">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Status</p>
+                <Badge variant={statusBadgeVariant(active.status)} className="mt-1">
+                  {active.status}
                 </Badge>
-              </p>
-              <p className="text-muted-foreground">
-                <span className="font-medium text-foreground">Reason: </span>
-                {review.reason?.trim() || "—"}
-              </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Reason</p>
+                <p className="mt-1 whitespace-pre-wrap rounded-md border bg-muted/30 p-3 text-foreground min-h-[3rem]">
+                  {active.reason?.trim() || "—"}
+                </p>
+              </div>
+              <p className="text-xs text-muted-foreground">Overtime requests do not include file attachments.</p>
             </div>
           )}
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setReview(null)} disabled={acting}>
-              {review?.status === "PENDING" ? "Cancel" : "Close"}
+            <Button variant="outline" onClick={() => setActive(null)} disabled={acting}>
+              {active?.status === "PENDING" ? "Cancel" : "Close"}
             </Button>
-            {review?.status === "PENDING" && (
+            {active?.status === "PENDING" && (
               <>
                 <Button variant="destructive" onClick={() => decide("REJECT")} disabled={acting}>
                   Reject

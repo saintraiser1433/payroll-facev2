@@ -31,6 +31,11 @@ import {
   EmployeeModuleTableToolbar,
 } from "@/components/employee/admin-style-employee-table"
 import { RequestStatusTabs, tabToEmployeeStatusFilter } from "@/components/request-status-tabs"
+import {
+  employeeSelfServiceRequestIntroLine,
+  overtimeNewRequestDialogDescription,
+  submittedEmployeeRequestToastDescription,
+} from "@/components/employee/employee-ui-helpers"
 
 type OtRow = {
   id: string
@@ -109,7 +114,10 @@ export function OvertimeModule() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.error || "Failed to submit overtime request")
 
-      toast({ title: "Submitted", description: "Overtime request sent to Dept Head." })
+      toast({
+        title: "Submitted",
+        description: submittedEmployeeRequestToastDescription("overtime", session?.user?.role),
+      })
       resetForm()
       setFormOpen(false)
       fetchMyRequests()
@@ -130,7 +138,9 @@ export function OvertimeModule() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Overtime</h1>
-          <p className="text-muted-foreground mt-1">Submit overtime requests to your department head</p>
+          <p className="text-muted-foreground mt-1">
+            {employeeSelfServiceRequestIntroLine("overtime", session?.user?.role)}
+          </p>
         </div>
         <Button onClick={() => setFormOpen(true)}>
           <Plus className="w-4 h-4 mr-2" />
@@ -148,7 +158,7 @@ export function OvertimeModule() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>New overtime request</DialogTitle>
-            <DialogDescription>Date, duration, and optional reason. Sent to your department head for approval.</DialogDescription>
+            <DialogDescription>{overtimeNewRequestDialogDescription(session?.user?.role)}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-3 py-2">
             <div className="space-y-1.5">

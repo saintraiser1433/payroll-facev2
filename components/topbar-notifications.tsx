@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useSession } from "next-auth/react"
-import { Bell, CalendarDays, Timer, Wallet } from "lucide-react"
+import { Bell, CalendarDays, ClipboardList, Timer, Wallet } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -15,7 +15,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-type Kind = "overtime" | "leave" | "cashAdvance"
+type Kind = "overtime" | "leave" | "cashAdvance" | "draftPeriods"
 
 type DecisionAlert = { id: string; kind: Kind; status: string }
 
@@ -23,19 +23,29 @@ type Summary = {
   overtime: number
   leave: number
   cashAdvance: number
+  draftPeriods: number
   decisionAlerts?: DecisionAlert[]
 }
 
 const DEPT_ROUTES: Record<Kind, string> = {
   overtime: "/department-head-dashboard/requests/overtime",
   leave: "/department-head-dashboard/requests/leave",
-  cashAdvance: "/department-head-dashboard/requests/cash-advance",
+  cashAdvance: "/department-head-dashboard",
+  draftPeriods: "/department-head-dashboard",
 }
 
 const EMP_ROUTES: Record<Kind, string> = {
   overtime: "/employee-dashboard/overtime",
   leave: "/employee-dashboard/leave",
   cashAdvance: "/employee-dashboard/cash-advance",
+  draftPeriods: "/employee-dashboard",
+}
+
+const ADMIN_ROUTES: Record<Kind, string> = {
+  overtime: "/department-head-requests",
+  leave: "/department-head-requests",
+  cashAdvance: "/department-head-requests",
+  draftPeriods: "/payroll",
 }
 
 function pendingDismissKey(userId: string) {
@@ -90,7 +100,7 @@ export function TopbarNotifications() {
 
   const role = session?.user?.role
   const userId = session?.user?.id
-  const enabled = role === "DEPARTMENT_HEAD" || role === "EMPLOYEE"
+  const enabled = role === "DEPARTMENT_HEAD" || role === "EMPLOYEE" || role === "ADMIN"
 
   const fetchSummary = useCallback(async () => {
     if (!enabled) return
@@ -102,6 +112,7 @@ export function TopbarNotifications() {
         overtime: data.overtime ?? 0,
         leave: data.leave ?? 0,
         cashAdvance: data.cashAdvance ?? 0,
+        draftPeriods: data.draftPeriods ?? 0,
         decisionAlerts: Array.isArray(data.decisionAlerts) ? data.decisionAlerts : [],
       })
     } catch {
@@ -133,7 +144,7 @@ export function TopbarNotifications() {
     setPendingDismiss((prev) => {
       const next = { ...prev }
       let changed = false
-      ;(["overtime", "leave", "cashAdvance"] as const).forEach((k) => {
+      ;(["overtime", "leave", "cashAdvance", "draftPeriods"] as const).forEach((k) => {
         const d = next[k]
         if (d !== undefined && summary[k] < d) {
           delete next[k]
@@ -143,9 +154,10 @@ export function TopbarNotifications() {
       if (changed) saveDismiss(userId, next)
       return changed ? next : prev
     })
-  }, [userId, summary?.overtime, summary?.leave, summary?.cashAdvance])
+  }, [userId, summary?.overtime, summary?.leave, summary?.cashAdvance, summary?.draftPeriods])
 
-  const routes = role === "DEPARTMENT_HEAD" ? DEPT_ROUTES : EMP_ROUTES
+  const routes =
+    role === "DEPARTMENT_HEAD" ? DEPT_ROUTES : role === "ADMIN" ? ADMIN_ROUTES : EMP_ROUTES
 
   const unseenByKind = useMemo(() => {
     const alerts = summary?.decisionAlerts ?? []
@@ -161,12 +173,13 @@ export function TopbarNotifications() {
 
   const displayPending = useMemo(() => {
     if (!summary) {
-      return { overtime: 0, leave: 0, cashAdvance: 0 }
+      return { overtime: 0, leave: 0, cashAdvance: 0, draftPeriods: 0 }
     }
     return {
       overtime: displayPendingCount(summary.overtime, pendingDismiss.overtime),
       leave: displayPendingCount(summary.leave, pendingDismiss.leave),
       cashAdvance: displayPendingCount(summary.cashAdvance, pendingDismiss.cashAdvance),
+      draftPeriods: displayPendingCount(summary.draftPeriods ?? 0, pendingDismiss.draftPeriods),
     }
   }, [summary, pendingDismiss])
 
@@ -176,10 +189,16 @@ export function TopbarNotifications() {
       overtime: displayPending.overtime + (isEmp ? unseenByKind.overtime : 0),
       leave: displayPending.leave + (isEmp ? unseenByKind.leave : 0),
       cashAdvance: displayPending.cashAdvance + (isEmp ? unseenByKind.cashAdvance : 0),
+      draftPeriods: displayPending.draftPeriods,
     }
   }, [displayPending, unseenByKind, role])
 
-  const total = lineTotals.overtime + lineTotals.leave + lineTotals.cashAdvance
+  const total =
+    role === "DEPARTMENT_HEAD"
+      ? lineTotals.overtime + lineTotals.leave
+      : role === "ADMIN"
+        ? lineTotals.overtime + lineTotals.leave + lineTotals.cashAdvance + lineTotals.draftPeriods
+        : lineTotals.overtime + lineTotals.leave + lineTotals.cashAdvance
 
   const handleRowClick = (kind: Kind) => {
     if (!userId || !summary) {
@@ -225,12 +244,16 @@ export function TopbarNotifications() {
         <DropdownMenuLabel>
           {role === "DEPARTMENT_HEAD"
             ? "Department requests"
-            : "Your requests & updates"}
+            : role === "ADMIN"
+              ? "Admin monitoring"
+              : "Your requests & updates"}
         </DropdownMenuLabel>
         <p className="px-2 pb-1 text-xs text-muted-foreground">
           {role === "EMPLOYEE"
             ? "Counts include pending submissions and new approve/reject updates. Open a row to clear its count."
-            : "Open a row to clear its count until new requests arrive."}
+            : role === "ADMIN"
+              ? "Pending department-head requests, all cash advances, and open payroll periods. Open a row to clear its count until counts change."
+              : "Open a row to clear its count until new requests arrive."}
         </p>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -257,18 +280,34 @@ export function TopbarNotifications() {
             {lineTotals.leave}
           </Badge>
         </DropdownMenuItem>
-        <DropdownMenuItem
-          className="flex items-center justify-between gap-2 cursor-pointer"
-          onClick={() => handleRowClick("cashAdvance")}
-        >
-          <span className="flex items-center gap-2">
-            <Wallet className="h-4 w-4 text-muted-foreground" />
-            Cash advance
-          </span>
-          <Badge variant={lineTotals.cashAdvance > 0 ? "default" : "secondary"}>
-            {lineTotals.cashAdvance}
-          </Badge>
-        </DropdownMenuItem>
+        {role !== "DEPARTMENT_HEAD" && (
+          <DropdownMenuItem
+            className="flex items-center justify-between gap-2 cursor-pointer"
+            onClick={() => handleRowClick("cashAdvance")}
+          >
+            <span className="flex items-center gap-2">
+              <Wallet className="h-4 w-4 text-muted-foreground" />
+              {role === "ADMIN" ? "Cash advances (pending)" : "Cash advance"}
+            </span>
+            <Badge variant={lineTotals.cashAdvance > 0 ? "default" : "secondary"}>
+              {lineTotals.cashAdvance}
+            </Badge>
+          </DropdownMenuItem>
+        )}
+        {role === "ADMIN" && (
+          <DropdownMenuItem
+            className="flex items-center justify-between gap-2 cursor-pointer"
+            onClick={() => handleRowClick("draftPeriods")}
+          >
+            <span className="flex items-center gap-2">
+              <ClipboardList className="h-4 w-4 text-muted-foreground" />
+              Open payroll periods
+            </span>
+            <Badge variant={lineTotals.draftPeriods > 0 ? "default" : "secondary"}>
+              {lineTotals.draftPeriods}
+            </Badge>
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   )

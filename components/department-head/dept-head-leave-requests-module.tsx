@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Search, Eye, ExternalLink } from "lucide-react"
+import { Search, FileText, ExternalLink } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -47,7 +47,7 @@ export function DeptHeadLeaveRequestsModule() {
   const [search, setSearch] = useState("")
   const [sortField] = useState("startDate")
   const [sortDir] = useState<"asc" | "desc">("desc")
-  const [review, setReview] = useState<LeaveRow | null>(null)
+  const [active, setActive] = useState<LeaveRow | null>(null)
   const [acting, setActing] = useState(false)
   const [statusTab, setStatusTab] = useState("all")
 
@@ -96,10 +96,10 @@ export function DeptHeadLeaveRequestsModule() {
   const { paginatedData, totalItems } = paginateData(filtered, page, itemsPerPage)
 
   const decide = async (decision: "APPROVE" | "REJECT") => {
-    if (!review) return
+    if (!active) return
     try {
       setActing(true)
-      const res = await fetch(`/api/leave-requests/${review.id}/decision`, {
+      const res = await fetch(`/api/leave-requests/${active.id}/decision`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ decision }),
@@ -107,7 +107,7 @@ export function DeptHeadLeaveRequestsModule() {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data?.error || "Failed to update")
       toast({ title: "Updated", description: `Leave request ${decision === "APPROVE" ? "approved" : "rejected"}.` })
-      setReview(null)
+      setActive(null)
       load()
     } catch (e) {
       toast({
@@ -203,9 +203,9 @@ export function DeptHeadLeaveRequestsModule() {
                         <Badge variant={statusBadgeVariant(row.raw.status)}>{row.raw.status}</Badge>
                       </TableCell>
                       <TableCell>
-                        <Button variant="outline" size="sm" onClick={() => setReview(row.raw)}>
-                          <Eye className="w-4 h-4 mr-1" />
-                          {row.raw.status === "PENDING" ? "Review" : "View"}
+                        <Button variant="outline" size="sm" onClick={() => setActive(row.raw)}>
+                          <FileText className="w-4 h-4 mr-1" />
+                          Details
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -225,49 +225,56 @@ export function DeptHeadLeaveRequestsModule() {
         </CardContent>
       </Card>
 
-      <Dialog open={!!review} onOpenChange={(o) => !o && setReview(null)}>
-        <DialogContent>
+      <Dialog open={!!active} onOpenChange={(o) => !o && setActive(null)}>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Leave request</DialogTitle>
+            <DialogTitle>Leave request details</DialogTitle>
             <DialogDescription>
-              {review && (
+              {active && (
                 <>
-                  {review.employee.firstName} {review.employee.lastName} —{" "}
-                  {new Date(review.startDate).toLocaleDateString()} to {new Date(review.endDate).toLocaleDateString()}
+                  {active.employee.firstName} {active.employee.lastName} —{" "}
+                  {new Date(active.startDate).toLocaleDateString()} to {new Date(active.endDate).toLocaleDateString()}
                 </>
               )}
             </DialogDescription>
           </DialogHeader>
-          {review && (
-            <div className="space-y-2 text-sm">
-              <p>
-                <span className="text-muted-foreground">Status: </span>
-                <Badge variant={statusBadgeVariant(review.status)} className="ml-1">
-                  {review.status}
+          {active && (
+            <div className="space-y-3 text-sm">
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Status</p>
+                <Badge variant={statusBadgeVariant(active.status)} className="mt-1">
+                  {active.status}
                 </Badge>
-              </p>
-              <p className="text-muted-foreground">
-                <span className="font-medium text-foreground">Reason: </span>
-                {review.reason?.trim() || "—"}
-              </p>
-              {review.attachmentPath && (
-                <a
-                  href={review.attachmentPath}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1 text-primary underline text-sm"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  View attachment
-                </a>
-              )}
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Reason</p>
+                <p className="mt-1 whitespace-pre-wrap rounded-md border bg-muted/30 p-3 text-foreground min-h-[3rem]">
+                  {active.reason?.trim() || "—"}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Attachment</p>
+                {active.attachmentPath ? (
+                  <a
+                    href={`/api/leave-requests/${active.id}/attachment`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 inline-flex items-center gap-1 text-primary underline underline-offset-2"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Open attachment
+                  </a>
+                ) : (
+                  <p className="mt-1 text-muted-foreground">No attachment</p>
+                )}
+              </div>
             </div>
           )}
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setReview(null)} disabled={acting}>
-              {review?.status === "PENDING" ? "Cancel" : "Close"}
+            <Button variant="outline" onClick={() => setActive(null)} disabled={acting}>
+              {active?.status === "PENDING" ? "Cancel" : "Close"}
             </Button>
-            {review?.status === "PENDING" && (
+            {active?.status === "PENDING" && (
               <>
                 <Button variant="destructive" onClick={() => decide("REJECT")} disabled={acting}>
                   Reject

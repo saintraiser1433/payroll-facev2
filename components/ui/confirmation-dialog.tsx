@@ -1,5 +1,6 @@
 "use client"
 
+import type { ReactNode } from "react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -15,11 +16,11 @@ interface ConfirmationDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   title: string
-  description: string
+  description: ReactNode
   confirmText?: string
   cancelText?: string
   variant?: "default" | "destructive"
-  onConfirm: () => void
+  onConfirm: () => void | Promise<void>
 }
 
 export function ConfirmationDialog({
@@ -37,12 +38,22 @@ export function ConfirmationDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
+          <AlertDialogDescription asChild>
+            <div className="text-sm text-muted-foreground space-y-2">{description}</div>
+          </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>{cancelText}</AlertDialogCancel>
           <AlertDialogAction
-            onClick={onConfirm}
+            onClick={async (e) => {
+              e.preventDefault()
+              try {
+                await Promise.resolve(onConfirm())
+                onOpenChange(false)
+              } catch {
+                // Caller shows errors (e.g. toast); keep dialog open.
+              }
+            }}
             className={
               variant === "destructive"
                 ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"

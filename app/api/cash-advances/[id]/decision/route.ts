@@ -38,7 +38,7 @@ function computeRepayment(ca: {
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const session = await getServerSession(authOptions)
-    if (!session || !["DEPARTMENT_HEAD", "ADMIN"].includes(session.user.role)) {
+    if (!session || session.user.role !== "ADMIN") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
@@ -62,23 +62,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     if (!cashAdvance) {
       return NextResponse.json({ error: "Cash advance not found" }, { status: 404 })
-    }
-
-    if (session.user.role === "DEPARTMENT_HEAD") {
-      if (cashAdvance.employee.departmentId !== actorEmployee.departmentId) {
-        return NextResponse.json({ error: "Unauthorized to approve this request" }, { status: 403 })
-      }
-    } else {
-      const reqUser = await prisma.user.findUnique({
-        where: { id: cashAdvance.employee.userId ?? "" },
-        select: { role: true },
-      })
-      if (reqUser?.role !== "DEPARTMENT_HEAD") {
-        return NextResponse.json(
-          { error: "Admin approval here is for department-head requests only." },
-          { status: 403 },
-        )
-      }
     }
 
     if (decision === "REJECT") {

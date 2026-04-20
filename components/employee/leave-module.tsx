@@ -26,7 +26,11 @@ import { useToast } from "@/hooks/use-toast"
 import { useEmployeeDashboard } from "@/hooks/use-employee-dashboard"
 import { useEmployeeRequests } from "@/hooks/use-employee-requests"
 import { useClientDataTable } from "@/hooks/use-client-data-table"
-import { formatTime, getStatusBadge } from "@/components/employee/employee-ui-helpers"
+import {
+  formatTime,
+  getStatusBadge,
+  submittedEmployeeRequestToastDescription,
+} from "@/components/employee/employee-ui-helpers"
 import {
   AdminStylePrimaryCell,
   AdminStyleStatusBadge,
@@ -110,7 +114,10 @@ export function LeaveModule() {
       const json = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(json?.error || "Failed to submit leave request")
 
-      toast({ title: "Submitted", description: "Leave request sent to Dept Head." })
+      toast({
+        title: "Submitted",
+        description: submittedEmployeeRequestToastDescription("leave", session?.user?.role),
+      })
       resetForm()
       setFormOpen(false)
       fetchMyRequests()
@@ -276,7 +283,7 @@ export function LeaveModule() {
               </p>
               {detailRow.attachmentPath && (
                 <a
-                  href={detailRow.attachmentPath}
+                  href={`/api/leave-requests/${detailRow.id}/attachment`}
                   target="_blank"
                   rel="noreferrer"
                   className="inline-flex items-center gap-1 text-primary underline underline-offset-2 text-sm"
@@ -414,7 +421,7 @@ export function LeaveModule() {
                             {r.attachmentPath ? (
                               <DropdownMenuItem
                                 onClick={() => {
-                                  window.open(r.attachmentPath!, "_blank", "noopener,noreferrer")
+                                  window.open(`/api/leave-requests/${r.id}/attachment`, "_blank", "noopener,noreferrer")
                                 }}
                               >
                                 <ExternalLink className="mr-2 h-4 w-4" />

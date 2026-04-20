@@ -1,7 +1,6 @@
-"use client"
+import { redirect } from "next/navigation"
 
-import { DeptHeadCashAdvanceRequestsModule } from "@/components/department-head/dept-head-cash-advance-requests-module"
-
+/** Cash advances are admin-approved only; department heads no longer review them here. */
 export default function DeptHeadCashAdvanceRequestsPage() {
-  return <DeptHeadCashAdvanceRequestsModule />
+  redirect("/department-head-dashboard")
 }

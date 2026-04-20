@@ -10,6 +10,8 @@ import { getOrCreateDeductionType } from '@/lib/payroll-deduction-types'
 const calculatePayrollSchema = z.object({
   payrollPeriodId: z.string().min(1, 'Payroll period ID is required'),
   employeeIds: z.array(z.string()).optional(), // If not provided, calculate for all active employees
+  /** When closing a period with bypass: omit these attendance rows from pay math */
+  excludeAttendanceIds: z.array(z.string()).optional().default([]),
 })
 
 // POST /api/payroll/calculate - Calculate payroll for a period
@@ -21,7 +23,8 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { payrollPeriodId, employeeIds } = calculatePayrollSchema.parse(body)
+    const { payrollPeriodId, employeeIds, excludeAttendanceIds } = calculatePayrollSchema.parse(body)
+    const excludeAttendanceSet = new Set(excludeAttendanceIds)
 
     // Get payroll period
     const payrollPeriod = await prisma.payrollPeriod.findUnique({
@@ -267,8 +270,13 @@ export async function POST(request: NextRequest) {
         continue // Skip to next employee
       }
 
+      const attendances =
+        excludeAttendanceSet.size > 0
+          ? employee.attendances.filter((a) => !excludeAttendanceSet.has(a.id))
+          : employee.attendances
+
       // Regular payroll calculation continues below
-      for (const attendance of employee.attendances) {
+      for (const attendance of attendances) {
         if (attendance.timeIn && attendance.timeOut) {
           // Calculate worked hours
           const workedMinutes = Math.floor(
@@ -300,7 +308,7 @@ export async function POST(request: NextRequest) {
           payrollPeriod.endDate,
           employee.schedule?.workingDays || 'MONDAY,TUESDAY,WEDNESDAY,THURSDAY,FRIDAY'
         )
-        const workedDays = employee.attendances.filter(a => a.timeIn && a.timeOut).length
+        const workedDays = attendances.filter(a => a.timeIn && a.timeOut).length
         
         // Calculate period-based salary using legal working days
         const periodDays = Math.ceil((new Date(payrollPeriod.endDate).getTime() - new Date(payrollPeriod.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
@@ -397,7 +405,7 @@ export async function POST(request: NextRequest) {
           return { lateMin: Math.max(0, lateMin), undertimeMin: Math.max(0, undertimeMin) }
         }
 
-        for (const attendance of employee.attendances) {
+        for (const attendance of attendances) {
           if (attendance.timeIn && attendance.timeOut && employee.schedule) {
             const { lateMin, undertimeMin } = computeLateAndUndertime({
               timeIn: attendance.timeIn,
@@ -417,7 +425,7 @@ export async function POST(request: NextRequest) {
         // Tardy / undertime as peso amounts (stored as payroll deductions; gross pay excludes these)
         tardyPhp = 0
         undertimePhp = 0
-        for (const attendance of employee.attendances) {
+        for (const attendance of attendances) {
           if (attendance.timeIn && attendance.timeOut && employee.schedule) {
             const { lateMin, undertimeMin } = computeLateAndUndertime({
               timeIn: attendance.timeIn,
@@ -439,7 +447,7 @@ export async function POST(request: NextRequest) {
         // Calculate holiday pay
         for (const holiday of holidays) {
           const holidayDate = new Date(holiday.date)
-          const isHolidayWorked = employee.attendances.some(attendance => {
+          const isHolidayWorked = attendances.some(attendance => {
             const attendanceDate = new Date(attendance.date)
             return attendanceDate.toDateString() === holidayDate.toDateString() && 
                    attendance.timeIn && attendance.timeOut
