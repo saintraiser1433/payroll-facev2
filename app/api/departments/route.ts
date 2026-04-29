@@ -4,10 +4,21 @@ import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { z } from 'zod'
 
+const positionSalaryIdsSchema = z.preprocess(
+  (value) =>
+    Array.isArray(value)
+      ? value
+          .filter((id): id is string => typeof id === "string")
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0)
+      : value,
+  z.array(z.string().min(1)).optional()
+)
+
 const departmentSchema = z.object({
   name: z.string().min(1, 'Department name is required'),
   description: z.string().optional(),
-  positionSalaryIds: z.array(z.string().min(1)).optional(),
+  positionSalaryIds: positionSalaryIdsSchema,
 })
 
 // GET /api/departments - Get all departments
@@ -197,8 +208,13 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    // Use transaction to handle department head assignment
+    // Use transaction to handle department head assignment + role synchronization
     const updatedDepartment = await prisma.$transaction(async (tx) => {
+      const targetDepartmentBefore = await tx.department.findUnique({
+        where: { id: departmentId },
+        select: { headId: true },
+      })
+
       // If assigning a new head, first remove them from any other department they might be heading
       if (headId) {
         await tx.department.updateMany({
@@ -208,7 +224,7 @@ export async function PUT(request: NextRequest) {
       }
 
       // Update the target department
-      return await tx.department.update({
+      const updated = await tx.department.update({
         where: { id: departmentId },
         data: { headId: headId || null },
         include: {
@@ -232,6 +248,61 @@ export async function PUT(request: NextRequest) {
           }
         }
       })
+
+      // Promote assigned head user to DEPARTMENT_HEAD (except ADMIN users).
+      if (headId) {
+        const assignedHeadEmployee = await tx.employee.findUnique({
+          where: { id: headId },
+          select: { userId: true },
+        })
+
+        if (assignedHeadEmployee?.userId) {
+          const assignedHeadUser = await tx.user.findUnique({
+            where: { id: assignedHeadEmployee.userId },
+            select: { role: true },
+          })
+
+          if (assignedHeadUser && assignedHeadUser.role !== "ADMIN" && assignedHeadUser.role !== "DEPARTMENT_HEAD") {
+            await tx.user.update({
+              where: { id: assignedHeadEmployee.userId },
+              data: { role: "DEPARTMENT_HEAD" },
+            })
+          }
+        }
+      }
+
+      // If previous head was removed from this department, demote back to EMPLOYEE
+      // only when they no longer head any department (and are not ADMIN).
+      const previousHeadId = targetDepartmentBefore?.headId
+      if (previousHeadId && previousHeadId !== headId) {
+        const stillHead = await tx.department.findFirst({
+          where: { headId: previousHeadId },
+          select: { id: true },
+        })
+
+        if (!stillHead) {
+          const previousHeadEmployee = await tx.employee.findUnique({
+            where: { id: previousHeadId },
+            select: { userId: true },
+          })
+
+          if (previousHeadEmployee?.userId) {
+            const previousHeadUser = await tx.user.findUnique({
+              where: { id: previousHeadEmployee.userId },
+              select: { role: true },
+            })
+
+            if (previousHeadUser?.role === "DEPARTMENT_HEAD") {
+              await tx.user.update({
+                where: { id: previousHeadEmployee.userId },
+                data: { role: "EMPLOYEE" },
+              })
+            }
+          }
+        }
+      }
+
+      return updated
     })
 
     return NextResponse.json(updatedDepartment)

@@ -4,10 +4,21 @@ import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
 import { z } from "zod"
 
+const positionSalaryIdsSchema = z.preprocess(
+  (value) =>
+    Array.isArray(value)
+      ? value
+          .filter((id): id is string => typeof id === "string")
+          .map((id) => id.trim())
+          .filter((id) => id.length > 0)
+      : value,
+  z.array(z.string().min(1)).optional()
+)
+
 const updateDepartmentSchema = z.object({
   name: z.string().min(1, "Department name is required").optional(),
   description: z.string().optional(),
-  positionSalaryIds: z.array(z.string().min(1)).optional(),
+  positionSalaryIds: positionSalaryIdsSchema,
 })
 
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {

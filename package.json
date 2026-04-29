@@ -14,7 +14,8 @@
     "db:reset": "prisma migrate reset",
     "db:seed": "tsx lib/seed.ts",
     "db:flush-to-admin": "tsx lib/flush-to-admin.ts",
-    "db:clear-attendance": "tsx lib/clear-attendance.ts"
+    "db:clear-attendance": "tsx lib/clear-attendance.ts",
+    "db:clear-periods": "tsx lib/clear-payroll-periods.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

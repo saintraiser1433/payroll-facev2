@@ -79,12 +79,14 @@ export async function GET(request: NextRequest) {
     }
 
     // If user is an employee or department head, only show their own attendance
+    let scopedEmployeeId: string | null = null
     if (session.user.role === 'EMPLOYEE' || session.user.role === 'DEPARTMENT_HEAD') {
       const employee = await prisma.employee.findFirst({
         where: { userId: session.user.id }
       })
       if (employee) {
         where.employeeId = employee.id
+        scopedEmployeeId = employee.id
       }
     }
 
@@ -130,30 +132,29 @@ export async function GET(request: NextRequest) {
       attendances.map((a) => `${a.employeeId}:${toYmdLocal(new Date(a.date))}`),
     )
 
-    const employeeIdsForLeaves = Array.from(new Set(attendances.map((a) => a.employeeId)))
-    let effectiveStart = startDate ? new Date(startDate) : null
-    let effectiveEnd = endDate ? new Date(endDate) : null
-    if (!effectiveStart || !effectiveEnd) {
-      if (attendances.length > 0) {
-        const times = attendances.map((a) => new Date(a.date).getTime())
-        const minT = Math.min(...times)
-        const maxT = Math.max(...times)
-        if (!effectiveStart) effectiveStart = new Date(minT)
-        if (!effectiveEnd) effectiveEnd = new Date(maxT)
-      } else {
-        const today = new Date()
-        if (!effectiveStart) effectiveStart = new Date(today.getFullYear(), today.getMonth(), 1)
-        if (!effectiveEnd) effectiveEnd = today
-      }
+    let employeeIdsForLeaves: string[] = []
+    if (employeeId) {
+      employeeIdsForLeaves = [employeeId]
+    } else if (scopedEmployeeId) {
+      employeeIdsForLeaves = [scopedEmployeeId]
+    } else {
+      // Admin/all-employees view: include approved leaves for all employees, not only
+      // those in the current paginated attendance rows.
+      const employeeRows = await prisma.employee.findMany({
+        select: { id: true },
+      })
+      employeeIdsForLeaves = employeeRows.map((e) => e.id)
     }
+    const effectiveStart = startDate ? new Date(startDate) : null
+    const effectiveEnd = endDate ? new Date(endDate) : null
 
     const approvedLeaves = employeeIdsForLeaves.length
       ? await prisma.leaveRequest.findMany({
           where: {
             status: "APPROVED",
             employeeId: { in: employeeIdsForLeaves },
-            startDate: { lte: effectiveEnd! },
-            endDate: { gte: effectiveStart! },
+            ...(effectiveEnd ? { startDate: { lte: effectiveEnd } } : {}),
+            ...(effectiveStart ? { endDate: { gte: effectiveStart } } : {}),
           },
           include: {
             employee: {
