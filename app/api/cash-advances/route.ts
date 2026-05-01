@@ -61,8 +61,7 @@ export async function POST(request: NextRequest) {
       where: { id: "default" },
       create: {
         id: "default",
-        fullPaymentInterestRate: 0,
-        installmentInterestRate: 0,
+        maxCashAdvancePercent: 80,
         installmentMaxPeriods: 12,
       },
       update: {},
@@ -76,10 +75,40 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const interestRate =
-      repaymentType === "FULL"
-        ? (policy?.fullPaymentInterestRate ?? 0)
-        : (policy?.installmentInterestRate ?? 0)
+    const employee = await prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: {
+        position: true,
+        salaryGrade: {
+          select: {
+            salaryRate: true,
+          },
+        },
+      },
+    })
+    if (!employee) {
+      return NextResponse.json({ error: "Employee not found" }, { status: 404 })
+    }
+    const positionSalary = await prisma.positionSalary.findFirst({
+      where: {
+        position: employee.position,
+        isActive: true,
+      },
+      select: {
+        salaryRate: true,
+      },
+    })
+    const monthlySalary = positionSalary?.salaryRate ?? employee.salaryGrade?.salaryRate ?? 0
+    const maxCashAdvancePercent = policy?.maxCashAdvancePercent ?? 80
+    const maxCashAdvanceAmount = (monthlySalary * maxCashAdvancePercent) / 100
+    if (maxCashAdvanceAmount > 0 && amount > maxCashAdvanceAmount) {
+      return NextResponse.json(
+        {
+          error: `Requested amount exceeds max cash advance of ${maxCashAdvancePercent}% of monthly salary (PHP ${maxCashAdvanceAmount.toFixed(2)}).`,
+        },
+        { status: 400 },
+      )
+    }
 
     const created = await prisma.cashAdvance.create({
       data: {
@@ -91,7 +120,6 @@ export async function POST(request: NextRequest) {
         isPaid: false,
         repaymentType,
         installmentCount: repaymentType === "INSTALLMENT" ? installmentCount : null,
-        interestRate,
       },
     })
 

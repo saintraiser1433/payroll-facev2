@@ -12,11 +12,9 @@ function computeRepayment(ca: {
   amount: number
   repaymentType: "FULL" | "INSTALLMENT"
   installmentCount: number | null
-  interestRate: number
 }) {
   const principal = ca.amount
-  const rate = ca.interestRate ?? 0
-  const totalRepayable = principal * (1 + rate / 100)
+  const totalRepayable = principal
   if (ca.repaymentType === "INSTALLMENT") {
     const n = Math.max(1, ca.installmentCount ?? 1)
     return {
@@ -81,7 +79,6 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       amount: cashAdvance.amount,
       repaymentType: cashAdvance.repaymentType,
       installmentCount: cashAdvance.installmentCount,
-      interestRate: cashAdvance.interestRate ?? 0,
     })
 
     const updated = await prisma.cashAdvance.update({

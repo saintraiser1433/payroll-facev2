@@ -10,8 +10,7 @@ async function getOrCreatePolicy() {
   return prisma.cashAdvancePolicy.create({
     data: {
       id: "default",
-      fullPaymentInterestRate: 0,
-      installmentInterestRate: 0,
+      maxCashAdvancePercent: 80,
       installmentMaxPeriods: 12,
     },
   })
@@ -25,7 +24,39 @@ export async function GET() {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
     const policy = await getOrCreatePolicy()
-    return NextResponse.json({ policy })
+    if (!["EMPLOYEE", "DEPARTMENT_HEAD"].includes(session.user.role)) {
+      return NextResponse.json({ policy })
+    }
+
+    const employee = await prisma.employee.findUnique({
+      where: { id: session.user.employeeId },
+      select: {
+        position: true,
+        salaryGrade: {
+          select: {
+            salaryRate: true,
+          },
+        },
+      },
+    })
+
+    if (!employee) {
+      return NextResponse.json({ policy, monthlySalary: 0, maxCashAdvanceAmount: 0 })
+    }
+
+    const positionSalary = await prisma.positionSalary.findFirst({
+      where: {
+        position: employee.position,
+        isActive: true,
+      },
+      select: {
+        salaryRate: true,
+      },
+    })
+
+    const monthlySalary = positionSalary?.salaryRate ?? employee.salaryGrade?.salaryRate ?? 0
+    const maxCashAdvanceAmount = (monthlySalary * (policy.maxCashAdvancePercent ?? 80)) / 100
+    return NextResponse.json({ policy, monthlySalary, maxCashAdvanceAmount })
   } catch (e) {
     console.error("cash-advance-policy GET:", e)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
@@ -33,8 +64,7 @@ export async function GET() {
 }
 
 const patchSchema = z.object({
-  fullPaymentInterestRate: z.number().min(0).optional(),
-  installmentInterestRate: z.number().min(0).optional(),
+  maxCashAdvancePercent: z.number().min(1).max(100).optional(),
   installmentMaxPeriods: z.number().int().min(1).max(120).optional(),
 })
 

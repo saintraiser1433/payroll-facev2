@@ -104,7 +104,9 @@ export async function GET(request: NextRequest) {
       presentToday: todayAttendances.filter(att => att.status === 'PRESENT').length,
       lateToday: todayAttendances.filter(att => att.status === 'LATE').length,
       absentToday: departmentHead.department.employees.length - todayAttendances.length,
-      totalOvertime: todayAttendances.reduce((sum, att) => sum + att.overtimeMinutes, 0) / 60 // Convert to hours
+      totalOvertime: todayAttendances.reduce((sum, att) => sum + att.overtimeMinutes, 0) / 60, // Convert to hours
+      monthlySalary: departmentHead.payrollItems[0]?.basicPay ?? 0,
+      walletBalance: departmentHead.payrollItems[0]?.netPay ?? 0,
     }
 
     return NextResponse.json({

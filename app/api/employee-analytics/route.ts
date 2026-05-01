@@ -129,6 +129,7 @@ export async function GET() {
         return sum
       }, 0),
       overtimeHours: currentMonthAttendances.reduce((sum, att) => sum + att.overtimeMinutes, 0) / 60,
+      monthlySalary: employee.payrollItems[0]?.basicPay ?? 0,
       lastNetPay: employee.payrollItems[0]?.netPay ?? 0,
     }
 

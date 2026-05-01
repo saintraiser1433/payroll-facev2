@@ -48,7 +48,6 @@ export async function GET(request: NextRequest) {
         isPaid: r.isPaid,
         repaymentType: r.repaymentType,
         installmentCount: r.installmentCount,
-        interestRate: r.interestRate,
         totalRepayable: r.totalRepayable,
         remainingBalance: r.remainingBalance,
         amountPerPeriod: r.amountPerPeriod,

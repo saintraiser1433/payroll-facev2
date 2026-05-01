@@ -46,6 +46,7 @@ const adminNavigation = [
   { name: "Schedules", href: "/schedules", icon: Calendar },
   { name: "Holidays", href: "/holidays", icon: CalendarDays },
   { name: "Payroll", href: "/payroll", icon: DollarSign },
+  { name: "CA Settings", href: "/cash-advance-settings", icon: Wallet },
   { name: "Benefits", href: "/benefits", icon: Shield },
   { name: "Requests", href: "/department-head-requests", icon: FileText },
   { name: "Analytics", href: "/analytics", icon: BarChart3 },
@@ -90,6 +91,7 @@ interface DashboardLayoutProps {
 
 function sidebarPageTitle(pathname: string) {
   if (pathname === "/") return "Overview"
+  if (pathname === "/cash-advance-settings") return "Cash Advance Settings"
   if (pathname === "/department-head-dashboard") return "Dashboard"
   if (pathname.startsWith("/department-head-dashboard/")) {
     const map: Record<string, string> = {

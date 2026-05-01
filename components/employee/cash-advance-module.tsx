@@ -53,7 +53,6 @@ type CashRow = {
   reason?: string | null
   repaymentType?: "FULL" | "INSTALLMENT"
   installmentCount?: number | null
-  interestRate?: number | null
   totalRepayable?: number | null
   remainingBalance?: number | null
   amountPerPeriod?: number | null
@@ -77,16 +76,11 @@ export function CashAdvanceModule() {
   const [repaymentType, setRepaymentType] = useState<"FULL" | "INSTALLMENT">("FULL")
   const [installmentCount, setInstallmentCount] = useState(2)
   const [policy, setPolicy] = useState({
-    fullPaymentInterestRate: 0,
-    installmentInterestRate: 0,
+    maxCashAdvancePercent: 80,
     installmentMaxPeriods: 12,
+    monthlySalary: 0,
+    maxCashAdvanceAmount: 0,
   })
-
-  const effectiveInterestRate = useMemo(
-    () =>
-      repaymentType === "FULL" ? policy.fullPaymentInterestRate : policy.installmentInterestRate,
-    [repaymentType, policy.fullPaymentInterestRate, policy.installmentInterestRate],
-  )
 
   const hasBlockingCashAdvance = useMemo(
     () =>
@@ -136,9 +130,10 @@ export function CashAdvanceModule() {
         if (cancelled || !data.policy) return
         const p = data.policy
         setPolicy({
-          fullPaymentInterestRate: p.fullPaymentInterestRate ?? 0,
-          installmentInterestRate: p.installmentInterestRate ?? 0,
+          maxCashAdvancePercent: p.maxCashAdvancePercent ?? 80,
           installmentMaxPeriods: p.installmentMaxPeriods ?? 12,
+          monthlySalary: data.monthlySalary ?? 0,
+          maxCashAdvanceAmount: data.maxCashAdvanceAmount ?? 0,
         })
       })
       .catch(() => {})
@@ -151,6 +146,14 @@ export function CashAdvanceModule() {
     try {
       if (!cashAdvanceAmount || cashAdvanceAmount <= 0) {
         toast({ title: "Error", description: "Please enter amount.", variant: "destructive" })
+        return
+      }
+      if (policy.maxCashAdvanceAmount > 0 && cashAdvanceAmount > policy.maxCashAdvanceAmount) {
+        toast({
+          title: "Amount too high",
+          description: `Max cash advance is ${formatCurrency(policy.maxCashAdvanceAmount)} (${policy.maxCashAdvancePercent}% of your monthly salary).`,
+          variant: "destructive",
+        })
         return
       }
 
@@ -244,11 +247,20 @@ export function CashAdvanceModule() {
               <Input
                 type="number"
                 min={0}
+                max={policy.maxCashAdvanceAmount > 0 ? policy.maxCashAdvanceAmount : undefined}
                 step="0.01"
                 value={cashAdvanceAmount}
                 onChange={(e) => setCashAdvanceAmount(parseFloat(e.target.value) || 0)}
                 placeholder="0.00"
               />
+              {policy.maxCashAdvanceAmount > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Max amount: {formatCurrency(policy.maxCashAdvanceAmount)}
+                  {policy.monthlySalary > 0
+                    ? ` (${policy.maxCashAdvancePercent}% of ${formatCurrency(policy.monthlySalary)})`
+                    : ` (${policy.maxCashAdvancePercent}% of monthly salary)`}
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>Repayment</Label>
@@ -279,26 +291,16 @@ export function CashAdvanceModule() {
               </div>
             )}
             <div className="space-y-1.5 rounded-md border bg-muted/50 p-3">
-              <Label className="text-muted-foreground">Interest rate (from admin settings)</Label>
+              <Label className="text-muted-foreground">Cash advance limit policy</Label>
               <Input
                 type="text"
                 readOnly
                 disabled
                 className="bg-background"
-                value={`${effectiveInterestRate.toFixed(2)}% (${repaymentType === "FULL" ? "full payment" : "installment"})`}
+                value={`Max cash advance is ${policy.maxCashAdvancePercent}% of monthly salary`}
               />
               <p className="text-xs text-muted-foreground">
-                Total repayable (estimate):{" "}
-                {formatCurrency(cashAdvanceAmount * (1 + effectiveInterestRate / 100))}
-                {repaymentType === "INSTALLMENT" && cashAdvanceAmount > 0 && (
-                  <>
-                    {" "}
-                    · Per period ~{" "}
-                    {formatCurrency(
-                      (cashAdvanceAmount * (1 + effectiveInterestRate / 100)) / Math.max(installmentCount, 1),
-                    )}
-                  </>
-                )}
+                Cash advance has no interest. If approved, repayment equals the principal amount.
               </p>
             </div>
             <div className="space-y-1.5">
@@ -348,15 +350,9 @@ export function CashAdvanceModule() {
                   : "Full (next payroll)"}
               </p>
               <p>
-                <span className="text-muted-foreground">Interest rate: </span>
-                {(detailRow.interestRate ?? 0).toFixed(2)}%
+                <span className="text-muted-foreground">Total repayable: </span>
+                {formatCurrency(detailRow.totalRepayable ?? detailRow.amount)}
               </p>
-              {(detailRow.totalRepayable != null || detailRow.status === "APPROVED") && (
-                <p>
-                  <span className="text-muted-foreground">Total repayable: </span>
-                  {formatCurrency(detailRow.totalRepayable ?? detailRow.amount * (1 + (detailRow.interestRate ?? 0) / 100))}
-                </p>
-              )}
               {detailRow.amountPerPeriod != null && detailRow.status === "APPROVED" && (
                 <p>
                   <span className="text-muted-foreground">Per payroll (scheduled): </span>

@@ -46,6 +46,7 @@ export interface EmployeeAnalyticsPayload {
     presentThisMonth: number
     totalHours: number
     overtimeHours: number
+    monthlySalary: number
     lastNetPay: number
   }
 }
@@ -114,6 +115,17 @@ export function EmployeeAnalyticsCharts() {
           Your attendance and payroll trends (last six months where applicable).
         </p>
       </div>
+
+      <Card className="overflow-hidden border-0 bg-gradient-to-r from-emerald-600 to-cyan-600 text-white shadow-lg">
+        <CardContent className="p-6">
+          <p className="text-sm text-white/80">Salary wallet</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight">{formatPhp(data.stats.lastNetPay)}</p>
+          <p className="mt-1 text-sm text-white/80">
+            Last net pay credited
+            {data.stats.monthlySalary > 0 ? ` · Monthly salary ${formatPhp(data.stats.monthlySalary)}` : ""}
+          </p>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card>

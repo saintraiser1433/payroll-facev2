@@ -218,8 +218,7 @@ model PayrollDeduction {
 
 model CashAdvancePolicy {
   id                        String   @id @default("default")
-  fullPaymentInterestRate   Float    @default(0)
-  installmentInterestRate   Float    @default(0)
+  maxCashAdvancePercent     Float    @default(80)
   installmentMaxPeriods     Int      @default(12)
   updatedAt                 DateTime @updatedAt
 
@@ -243,7 +242,6 @@ model CashAdvance {
 
   repaymentType    CashAdvanceRepaymentType @default(FULL)
   installmentCount Int?
-  interestRate       Float                    @default(0)
   totalRepayable     Float?
   remainingBalance   Float?
   amountPerPeriod    Float?

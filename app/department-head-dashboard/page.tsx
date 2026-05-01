@@ -8,6 +8,8 @@ import { useDepartmentHeadDashboard } from "@/hooks/use-department-head-dashboar
 
 export default function DepartmentHeadOverviewPage() {
   const { data, loading, error, refetch } = useDepartmentHeadDashboard()
+  const formatPhp = (n: number) =>
+    new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP", maximumFractionDigits: 0 }).format(n)
 
   if (loading) {
     return (
@@ -44,6 +46,19 @@ export default function DepartmentHeadOverviewPage() {
         <h1 className="text-2xl font-semibold text-foreground">Welcome back, {data.employee.firstName}!</h1>
         <p className="text-muted-foreground mt-1">Department head — {data.employee.department.name}</p>
       </div>
+
+      <Card className="overflow-hidden border-0 bg-gradient-to-r from-emerald-600 to-cyan-600 text-white shadow-lg">
+        <CardContent className="p-6">
+          <p className="text-sm text-white/80">Salary wallet</p>
+          <p className="mt-2 text-3xl font-bold tracking-tight">{formatPhp(data.departmentStats.walletBalance)}</p>
+          <p className="mt-1 text-sm text-white/80">
+            Last net pay credited
+            {data.departmentStats.monthlySalary > 0
+              ? ` · Monthly salary ${formatPhp(data.departmentStats.monthlySalary)}`
+              : ""}
+          </p>
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
         <Card>

@@ -67,5 +67,7 @@ export interface DepartmentHeadData {
     lateToday: number
     absentToday: number
     totalOvertime: number
+    monthlySalary: number
+    walletBalance: number
   }
 }
