@@ -48,6 +48,8 @@ export interface EmployeeAnalyticsPayload {
     overtimeHours: number
     monthlySalary: number
     lastNetPay: number
+    walletMode?: "last_payout" | "current_period" | "running_estimate"
+    walletPeriodName?: string | null
   }
 }
 
@@ -61,7 +63,16 @@ export function EmployeeAnalyticsCharts() {
     ;(async () => {
       try {
         const res = await fetch("/api/employee-analytics")
-        if (!res.ok) throw new Error("Failed to load analytics")
+        if (!res.ok) {
+          let detail = `Request failed (${res.status})`
+          try {
+            const errBody = await res.json()
+            if (errBody?.error && typeof errBody.error === "string") detail = errBody.error
+          } catch {
+            /* ignore */
+          }
+          throw new Error(detail)
+        }
         const json = await res.json()
         if (!cancelled) setData(json)
       } catch (e) {
@@ -121,8 +132,12 @@ export function EmployeeAnalyticsCharts() {
           <p className="text-sm text-white/80">Salary wallet</p>
           <p className="mt-2 text-3xl font-bold tracking-tight">{formatPhp(data.stats.lastNetPay)}</p>
           <p className="mt-1 text-sm text-white/80">
-            Last net pay credited
-            {data.stats.monthlySalary > 0 ? ` · Monthly salary ${formatPhp(data.stats.monthlySalary)}` : ""}
+            {data.stats.walletMode === "running_estimate" && data.stats.walletPeriodName
+              ? `Estimated net for draft period "${data.stats.walletPeriodName}" (same rules as payroll: half-month base, minus absences and late/undertime, then taxes and other period deductions if enabled). Final amount is set when payroll is calculated.`
+              : data.stats.walletMode === "current_period" && data.stats.walletPeriodName
+                ? `Net pay from your latest payroll run for draft period "${data.stats.walletPeriodName}".`
+                : "Last net pay credited from your most recent payroll slip."}
+            {data.stats.monthlySalary > 0 ? ` Monthly salary ${formatPhp(data.stats.monthlySalary)}.` : ""}
           </p>
         </CardContent>
       </Card>

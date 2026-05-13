@@ -6,6 +6,8 @@ import { z } from 'zod'
 import { calculatePhilippineTax } from '@/lib/philippine-tax'
 import { creditedOvertimeMinutesForDay } from '@/lib/payroll-overtime'
 import { getOrCreateDeductionType } from '@/lib/payroll-deduction-types'
+import { getMonthlyAbsenceAccrualWindow } from '@/lib/payroll-accrual'
+import { getWorkDaysInPeriod } from '@/lib/payroll-work-days'
 
 const calculatePayrollSchema = z.object({
   payrollPeriodId: z.string().min(1, 'Payroll period ID is required'),
@@ -302,45 +304,61 @@ export async function POST(request: NextRequest) {
       // totalEarnings already declared above
 
       if (employee.salaryType === 'MONTHLY') {
-        // For monthly, calculate based on payroll period type
-        const expectedWorkDays = getWorkDaysInPeriod(
+        const workingDaysCsv =
+          employee.schedule?.workingDays || 'MONDAY,TUESDAY,WEDNESDAY,THURSDAY,FRIDAY'
+
+        const fullPeriodExpectedWorkDays = getWorkDaysInPeriod(
           payrollPeriod.startDate,
           payrollPeriod.endDate,
-          employee.schedule?.workingDays || 'MONDAY,TUESDAY,WEDNESDAY,THURSDAY,FRIDAY'
+          workingDaysCsv,
         )
-        const workedDays = attendances.filter(a => a.timeIn && a.timeOut).length
-        
-        // Calculate period-based salary using legal working days
-        const periodDays = Math.ceil((new Date(payrollPeriod.endDate).getTime() - new Date(payrollPeriod.startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
-        const daysInMonth = new Date(new Date(payrollPeriod.startDate).getFullYear(), new Date(payrollPeriod.startDate).getMonth() + 1, 0).getDate()
-        
-        // Use simple half-month calculation for now
+
+        const absenceAccrual = getMonthlyAbsenceAccrualWindow(payrollPeriod)
+        const accrualExpectedWorkDays = absenceAccrual
+          ? getWorkDaysInPeriod(absenceAccrual.start, absenceAccrual.end, workingDaysCsv)
+          : 0
+
+        const workedDays = absenceAccrual
+          ? attendances.filter((a) => {
+              if (!a.timeIn || !a.timeOut) return false
+              const ad = new Date(a.date).getTime()
+              return ad >= absenceAccrual.start.getTime() && ad <= absenceAccrual.end.getTime()
+            }).length
+          : 0
+
         const salaryRate = positionSalaryMap.get(employee.position) ?? employee.salaryGrade?.salaryRate ?? 0
         const halfMonthSalary = salaryRate / 2
-        
+
         console.log(`\nMonthly worker calculation for ${employee.firstName} ${employee.lastName}:`)
         console.log(`- Monthly salary: ₱${salaryRate}`)
-        console.log(`- Expected work days in period: ${expectedWorkDays}`)
+        console.log(`- Expected work days in full period: ${fullPeriodExpectedWorkDays}`)
+        console.log(`- Accrual work days (for absence, draft through today): ${accrualExpectedWorkDays}`)
         console.log(`- Half-month salary: ₱${halfMonthSalary.toFixed(2)}`)
-        console.log(`- Worked days: ${workedDays}`)
-        
-        // Basic pay is the full half-month salary (unchanged)
+        console.log(`- Worked days (accrual): ${workedDays}`)
+
         basicPay = halfMonthSalary
-        
-        // Calculate daily rate for gross pay calculation based on present legal days
-        const dailyRate = halfMonthSalary / expectedWorkDays
 
-        const workingDaysCsv = employee.schedule?.workingDays || 'MONDAY,TUESDAY,WEDNESDAY,THURSDAY,FRIDAY'
+        const dailyRate =
+          fullPeriodExpectedWorkDays > 0 ? halfMonthSalary / fullPeriodExpectedWorkDays : 0
 
-        // Approved leave days count as "worked" days for absence deduction.
-        const approvedLeaveDays = (employee.leaveRequests || []).reduce((sum: number, leave) => {
-          const overlapStart = leave.startDate > payrollPeriod.startDate ? leave.startDate : payrollPeriod.startDate
-          const overlapEnd = leave.endDate < payrollPeriod.endDate ? leave.endDate : payrollPeriod.endDate
-          if (overlapStart > overlapEnd) return sum
-          return sum + getWorkDaysInPeriod(overlapStart, overlapEnd, workingDaysCsv)
-        }, 0)
+        const approvedLeaveDays = absenceAccrual
+          ? (employee.leaveRequests || []).reduce((sum: number, leave) => {
+              const overlapStartMs = Math.max(
+                leave.startDate.getTime(),
+                payrollPeriod.startDate.getTime(),
+                absenceAccrual.start.getTime(),
+              )
+              const overlapEndMs = Math.min(
+                leave.endDate.getTime(),
+                payrollPeriod.endDate.getTime(),
+                absenceAccrual.end.getTime(),
+              )
+              if (overlapStartMs > overlapEndMs) return sum
+              return sum + getWorkDaysInPeriod(new Date(overlapStartMs), new Date(overlapEndMs), workingDaysCsv)
+            }, 0)
+          : 0
 
-        const absentDays = Math.max(0, expectedWorkDays - (workedDays + approvedLeaveDays))
+        const absentDays = Math.max(0, accrualExpectedWorkDays - (workedDays + approvedLeaveDays))
         const absentDeduction = absentDays * dailyRate
         
         // Calculate schedule duration for accurate rate calculations
@@ -462,9 +480,9 @@ export async function POST(request: NextRequest) {
           }
         }
         
-        console.log(`- Worked days: ${workedDays}`)
-        console.log(`- Approved leave days: ${approvedLeaveDays}`)
-        console.log(`- Absent days: ${absentDays}`)
+        console.log(`- Worked days (accrual): ${workedDays}`)
+        console.log(`- Approved leave days (accrual): ${approvedLeaveDays}`)
+        console.log(`- Absent days (accrual): ${absentDays}`)
         console.log(`- Late minutes: ${totalLateMinutes}`)
         console.log(`- Undertime minutes: ${totalUndertimeMinutes}`)
         console.log(`- Overtime hours: ${totalOvertimeHours.toFixed(2)}`)
@@ -757,32 +775,5 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
-}
-
-// Helper function to calculate work days in a period
-function getWorkDaysInPeriod(startDate: Date, endDate: Date, workingDays: string): number {
-  const workDays = workingDays.split(',').map(day => day.trim().toUpperCase())
-  const dayMap: { [key: string]: number } = {
-    'SUNDAY': 0,
-    'MONDAY': 1,
-    'TUESDAY': 2,
-    'WEDNESDAY': 3,
-    'THURSDAY': 4,
-    'FRIDAY': 5,
-    'SATURDAY': 6
-  }
-
-  let count = 0
-  const current = new Date(startDate)
-  
-  while (current <= endDate) {
-    const dayName = Object.keys(dayMap).find(key => dayMap[key] === current.getDay())
-    if (dayName && workDays.includes(dayName)) {
-      count++
-    }
-    current.setDate(current.getDate() + 1)
-  }
-
-  return count
 }
 

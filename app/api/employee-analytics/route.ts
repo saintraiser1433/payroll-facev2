@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/auth"
 import { prisma } from "@/lib/prisma"
+import { estimateMonthlyWalletForDraftPeriod } from "@/lib/employee-wallet-estimate"
 
 function monthKey(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
@@ -24,6 +25,8 @@ export async function GET() {
       where: { userId: session.user.id },
       include: {
         department: { select: { name: true } },
+        salaryGrade: { select: { salaryRate: true } },
+        schedule: true,
         attendances: {
           where: {
             date: {
@@ -37,6 +40,28 @@ export async function GET() {
             },
           },
           orderBy: { date: "asc" },
+        },
+        leaveRequests: {
+          where: { status: "APPROVED" },
+          orderBy: { startDate: "desc" },
+          take: 100,
+        },
+        overtimeRequests: {
+          where: { status: "APPROVED" },
+          orderBy: { requestDate: "desc" },
+          take: 200,
+        },
+        employeeBenefits: {
+          where: { isActive: true },
+          include: { benefit: true },
+        },
+        cashAdvances: {
+          where: {
+            status: "APPROVED",
+            isPaid: false,
+            OR: [{ remainingBalance: { gt: 0 } }, { remainingBalance: null }],
+          },
+          orderBy: { approvedAt: "asc" },
         },
         payrollItems: {
           include: { payrollPeriod: true },
@@ -71,7 +96,7 @@ export async function GET() {
       const key = monthKey(new Date(att.date))
       const bucket = monthly.get(key)
       if (bucket) {
-        if (att.status === "PRESENT") bucket.presentDays += 1
+        if (att.status === "PRESENT" || att.status === "LATE") bucket.presentDays += 1
         if (att.timeIn && att.timeOut) {
           const hours =
             (new Date(att.timeOut).getTime() - new Date(att.timeIn).getTime()) / (1000 * 60 * 60)
@@ -117,8 +142,95 @@ export async function GET() {
       return attDate >= currentMonth && attDate < nextMonth
     })
 
+    const positionSalaryRow = await prisma.positionSalary.findFirst({
+      where: { position: employee.position, isActive: true },
+      select: { salaryRate: true },
+    })
+    const baseMonthlySalary =
+      positionSalaryRow?.salaryRate ?? employee.salaryGrade?.salaryRate ?? 0
+
+    const now = new Date()
+    const activeDraftPeriod = await prisma.payrollPeriod.findFirst({
+      where: {
+        status: "DRAFT",
+        isThirteenthMonth: false,
+        startDate: { lte: now },
+        endDate: { gte: now },
+      },
+      orderBy: { startDate: "desc" },
+    })
+
+    let lastNetPay = employee.payrollItems[0]?.netPay ?? 0
+    let walletMode: "last_payout" | "current_period" | "running_estimate" = employee.payrollItems[0]
+      ? "last_payout"
+      : "last_payout"
+    let walletPeriodName: string | null = null
+
+    if (activeDraftPeriod) {
+      walletPeriodName = activeDraftPeriod.name
+      const periodItem = await prisma.payrollItem.findUnique({
+        where: {
+          employeeId_payrollPeriodId: {
+            employeeId: employee.id,
+            payrollPeriodId: activeDraftPeriod.id,
+          },
+        },
+      })
+
+      // Draft periods: always show a live accrual estimate for the wallet when possible.
+      // Storing PayrollItem early (e.g. net ₱0 from an old full-period absence run) must not
+      // hide the corrected preview through "today" (May 1–15 while today is May 13, etc.).
+      let draftEstimate: { estimatedNet: number } | null = null
+      if (employee.salaryType === "MONTHLY" && baseMonthlySalary > 0) {
+        const ps = activeDraftPeriod.startDate
+        const pe = activeDraftPeriod.endDate
+        const attendancesInPeriod = employee.attendances.filter((a) => {
+          const d = new Date(a.date)
+          return d >= ps && d <= pe
+        })
+        const otInPeriod = employee.overtimeRequests.filter((r) => {
+          const d = new Date(r.requestDate)
+          return d >= ps && d <= pe
+        })
+        const leavesInPeriod = employee.leaveRequests.filter((lr) => {
+          return lr.startDate <= pe && lr.endDate >= ps
+        })
+        const holidays = await prisma.holiday.findMany({
+          where: {
+            date: { gte: ps, lte: pe },
+            isActive: true,
+          },
+        })
+        const benefitsForPeriod = employee.employeeBenefits.filter(
+          (eb) => !eb.endDate || eb.endDate >= ps,
+        )
+        draftEstimate = estimateMonthlyWalletForDraftPeriod({
+          payrollPeriod: activeDraftPeriod,
+          salaryType: employee.salaryType,
+          salaryRate: baseMonthlySalary,
+          schedule: employee.schedule,
+          attendances: attendancesInPeriod,
+          leaveRequests: leavesInPeriod,
+          overtimeRequests: otInPeriod,
+          employeeBenefits: benefitsForPeriod,
+          holidays,
+          cashAdvances: employee.cashAdvances,
+        })
+      }
+
+      if (draftEstimate) {
+        lastNetPay = draftEstimate.estimatedNet
+        walletMode = "running_estimate"
+      } else if (periodItem) {
+        lastNetPay = periodItem.netPay
+        walletMode = "current_period"
+      }
+    }
+
     const stats = {
-      presentThisMonth: currentMonthAttendances.filter((att) => att.status === "PRESENT").length,
+      presentThisMonth: currentMonthAttendances.filter(
+        (att) => att.status === "PRESENT" || att.status === "LATE",
+      ).length,
       totalHours: currentMonthAttendances.reduce((sum, att) => {
         if (att.timeIn && att.timeOut) {
           return (
@@ -129,8 +241,10 @@ export async function GET() {
         return sum
       }, 0),
       overtimeHours: currentMonthAttendances.reduce((sum, att) => sum + att.overtimeMinutes, 0) / 60,
-      monthlySalary: employee.payrollItems[0]?.basicPay ?? 0,
-      lastNetPay: employee.payrollItems[0]?.netPay ?? 0,
+      monthlySalary: baseMonthlySalary,
+      lastNetPay,
+      walletMode,
+      walletPeriodName,
     }
 
     return NextResponse.json({

@@ -383,7 +383,7 @@ export function FaceRecognitionAttendance() {
             <div className="flex flex-col gap-2">
               <label className="text-sm font-medium text-slate-900 dark:text-slate-100">Action</label>
               <div className="flex flex-wrap gap-2">
-                {(["IN", "OUT", "BREAK_IN", "BREAK_OUT"] as AttendanceType[]).map(type => (
+                {(["IN", "BREAK_OUT", "BREAK_IN", "OUT"] as AttendanceType[]).map(type => (
                   <Button
                     key={type}
                     type="button"

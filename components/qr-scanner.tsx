@@ -178,7 +178,7 @@ export function QRScanner({ onScanSuccess }: QRScannerProps) {
             console.warn('No action selected when QR code scanned - showing error')
             setMessage({ 
               type: 'error', 
-              text: 'Please select an action (Time In, Time Out, Break In, or Break Out) before scanning your QR code.' 
+              text: 'Please select an action (Time In, Break Out, Break In, or Time Out) before scanning your QR code.' 
             })
             setScannedEmployeeId(null)
             scannedEmployeeIdRef.current = null
@@ -447,7 +447,7 @@ export function QRScanner({ onScanSuccess }: QRScannerProps) {
         console.error('No action found when processing QR scan')
         setMessage({ 
           type: 'error', 
-          text: 'Please select an action (Time In, Time Out, Break In, or Break Out) before scanning your QR code.' 
+          text: 'Please select an action (Time In, Break Out, Break In, or Time Out) before scanning your QR code.' 
         })
         return
       }
@@ -850,22 +850,6 @@ export function QRScanner({ onScanSuccess }: QRScannerProps) {
                 onClick={(e) => {
                   e.preventDefault()
                   e.stopPropagation()
-                  handlePreSelectAction('OUT')
-                }}
-                disabled={isProcessing}
-                className={`bg-red-600 hover:bg-red-700 text-white ${pendingAction === 'OUT' ? 'ring-2 ring-red-400 ring-offset-2 border-2 border-red-300' : ''} ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                {isProcessing && selectedAction === 'OUT' ? (
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                ) : (
-                  <LogOut className="mr-2 h-4 w-4" />
-                )}
-                Time Out
-              </Button>
-              <Button
-                onClick={(e) => {
-                  e.preventDefault()
-                  e.stopPropagation()
                   handlePreSelectAction('BREAK_OUT')
                 }}
                 disabled={isProcessing}
@@ -895,6 +879,22 @@ export function QRScanner({ onScanSuccess }: QRScannerProps) {
                   <Coffee className="mr-2 h-4 w-4" />
                 )}
                 Break In
+              </Button>
+              <Button
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  handlePreSelectAction('OUT')
+                }}
+                disabled={isProcessing}
+                className={`bg-red-600 hover:bg-red-700 text-white ${pendingAction === 'OUT' ? 'ring-2 ring-red-400 ring-offset-2 border-2 border-red-300' : ''} ${isProcessing ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {isProcessing && selectedAction === 'OUT' ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <LogOut className="mr-2 h-4 w-4" />
+                )}
+                Time Out
               </Button>
             </div>
           </div>

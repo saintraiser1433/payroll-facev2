@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Payroll System — User Manual</title>
+<style>
+  @page { size: A4; margin: 18mm 16mm; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    color: #0f172a;
+    background: #ffffff;
+    font-size: 11.5pt;
+    line-height: 1.5;
+  }
+  .page { max-width: 800px; margin: 0 auto; padding: 24px; }
+
+  header.cover {
+    text-align: center;
+    padding: 24px 0 16px;
+    border-bottom: 2px solid #0ea5e9;
+    margin-bottom: 24px;
+  }
+  header.cover h1 {
+    margin: 0;
+    font-size: 22pt;
+    color: #0f172a;
+    letter-spacing: -0.3px;
+  }
+  header.cover h2 {
+    margin: 6px 0 4px;
+    font-size: 13pt;
+    color: #334155;
+    font-weight: 500;
+  }
+  header.cover .subtitle {
+    color: #64748b;
+    font-size: 11pt;
+  }
+  header.cover .meta {
+    color: #94a3b8;
+    font-size: 9.5pt;
+    margin-top: 6px;
+  }
+
+  section { page-break-inside: avoid; margin-bottom: 22px; }
+  h3.section-title {
+    color: #0369a1;
+    border-left: 4px solid #0ea5e9;
+    padding: 4px 10px;
+    background: #f0f9ff;
+    font-size: 13pt;
+    margin: 18px 0 10px;
+  }
+  .intro {
+    color: #475569;
+    font-style: italic;
+    margin: 6px 0 10px;
+  }
+  .sub {
+    color: #0f766e;
+    font-weight: 700;
+    margin: 12px 0 6px;
+    font-size: 11.5pt;
+  }
+  ol, ul { padding-left: 22px; margin: 6px 0; }
+  li { margin: 4px 0; }
+  code, .mono {
+    font-family: "Consolas", "Courier New", monospace;
+    background: #f1f5f9;
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 10.5pt;
+    color: #0f172a;
+  }
+  pre.flow {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 14px 16px;
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 10pt;
+    line-height: 1.55;
+    color: #0f172a;
+    white-space: pre;
+    overflow-x: auto;
+  }
+  table.accounts {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0 4px;
+    font-size: 10.5pt;
+  }
+  table.accounts th, table.accounts td {
+    border: 1px solid #cbd5e1;
+    padding: 6px 10px;
+    text-align: left;
+  }
+  table.accounts th {
+    background: #0ea5e9;
+    color: #ffffff;
+    font-weight: 600;
+  }
+  table.accounts tr:nth-child(even) td { background: #f8fafc; }
+  footer.foot {
+    margin-top: 30px;
+    padding-top: 12px;
+    border-top: 1px solid #e2e8f0;
+    text-align: center;
+    font-style: italic;
+    color: #64748b;
+    font-size: 9.5pt;
+  }
+  .print-hint {
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    color: #78350f;
+    padding: 10px 14px;
+    border-radius: 6px;
+    font-size: 10pt;
+    margin-bottom: 18px;
+  }
+  @media print {
+    .print-hint { display: none; }
+    .page { padding: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="print-hint">
+    <strong>Tip:</strong> To save this as a PDF, press <strong>Ctrl + P</strong>, then choose
+    <strong>"Save as PDF"</strong> as the destination. Set margins to <em>Default</em> and
+    enable <em>Background graphics</em> for the best result.
+  </div>
+
+  <header class="cover">
+    <h1>Glan White Sand Beach Resort</h1>
+    <h2>Web-based Payroll Management System</h2>
+    <div class="subtitle">User Manual — Start-to-End Navigation Flow</div>
+    <div class="meta" id="generated-meta"></div>
+  </header>
+
+  <section>
+    <h3 class="section-title">STEP 1 — Start the System</h3>
+    <p class="intro">Open PowerShell (or any terminal) in the project folder, run the dev server, then open your browser.</p>
+    <ol>
+      <li>Run: <code>npm run dev</code></li>
+      <li>Open: <code>http://localhost:3000</code> (or <code>:3002</code> depending on your <code>.env</code>)</li>
+      <li>You will be redirected automatically to the Sign-In page at <code>/auth/signin</code>.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h3 class="section-title">STEP 2 — Sign In</h3>
+    <p class="intro">Use one of the demo accounts. The middleware reads your role and routes you to the correct dashboard.</p>
+    <table class="accounts">
+      <thead>
+        <tr><th>Role</th><th>Email</th><th>Password</th><th>Lands on</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Admin (HR)</td><td>admin@pyrol.com</td><td>admin123</td><td><code>/</code></td></tr>
+        <tr><td>Department Head</td><td>depthead@pyrol.com</td><td>dept123</td><td><code>/department-head-dashboard</code></td></tr>
+        <tr><td>Employee</td><td>employee@pyrol.com</td><td>emp123</td><td><code>/employee-dashboard</code></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h3 class="section-title">STEP 3 — ADMIN Flow (HR / Full Setup)</h3>
+    <p class="intro">After login as Admin, the sidebar shows 12 menus. Follow this order: set up data first, then run daily operations, then process payroll, then view analytics.</p>
+
+    <div class="sub">A. Initial Setup (do these once, in order)</div>
+    <ol>
+      <li><strong>Dashboard</strong> (<code>/</code>) — Verify totals, attendance trends, departments overview.</li>
+      <li><strong>Departments</strong> (<code>/departments</code>) — Create departments (Front Office, Housekeeping, F&amp;B, etc.).</li>
+      <li><strong>Position Salaries</strong> (<code>/position-salaries</code>) — Define each position's base salary. The system is position-based, not SG-based.</li>
+      <li><strong>Schedules</strong> (<code>/schedules</code>) — Create work shifts (Regular Day, Night, Weekend, Flexible).</li>
+      <li><strong>Holidays</strong> (<code>/holidays</code>) — Add regular and special holidays.</li>
+      <li><strong>CA Settings</strong> (<code>/cash-advance-settings</code>) — Set cash-advance limits and rules.</li>
+      <li><strong>Benefits</strong> (<code>/benefits</code>) — Configure SSS, PhilHealth, Pag-IBIG, and withholding tax.</li>
+      <li><strong>Employees</strong> (<code>/employees</code>) — Add each employee, assign position/department/schedule, upload profile picture, and <strong>enroll their face</strong> for face-recognition attendance.</li>
+    </ol>
+
+    <div class="sub">B. Daily Operations</div>
+    <ol start="9">
+      <li><strong>Attendance</strong> (<code>/attendance</code>) — Kiosk + admin screen. Employees scan their face (or QR fallback) to Time In / Time Out. Admin can review, correct, or manually add logs. Late, undertime, and overtime are auto-computed.</li>
+      <li><strong>Requests</strong> (<code>/department-head-requests</code>) — Review, approve, or reject Overtime, Cash Advance, and Leave that bubble up from Department Heads.</li>
+    </ol>
+
+    <div class="sub">C. Payroll Processing (semi-monthly)</div>
+    <ol start="11">
+      <li><strong>Payroll</strong> (<code>/payroll</code>): create a Payroll Period (start → end date), click <strong>Generate</strong>. The system pulls attendance, OT, CA, deductions, and holidays, then computes net pay. Review each employee, export the payslip to PDF, and mark the period as paid / archived.</li>
+    </ol>
+
+    <div class="sub">D. Reporting</div>
+    <ol start="12">
+      <li><strong>Analytics</strong> (<code>/analytics</code>) — Attendance trends, payroll cost charts, department insights.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h3 class="section-title">STEP 4 — DEPARTMENT HEAD Flow</h3>
+    <p class="intro">After login as Department Head, the sidebar is split into three sections: Payroll, Request (approve team), and My Requests (their own).</p>
+
+    <div class="sub">Section 1 — Payroll</div>
+    <ol>
+      <li><strong>Dashboard</strong> (<code>/department-head-dashboard</code>) — Overview of their department.</li>
+      <li><strong>Department Attendance</strong> (<code>/department-head-dashboard/department-attendance</code>) — View their team's DTR.</li>
+      <li><strong>Department Payroll</strong> (<code>/department-head-dashboard/department-payroll</code>) — View team's payroll summary.</li>
+      <li><strong>My DTR</strong> (<code>/department-head-dashboard/my-dtr</code>) — Their own time records.</li>
+      <li><strong>My Payslip</strong> (<code>/department-head-dashboard/my-payslip</code>) — Download their own payslip.</li>
+    </ol>
+
+    <div class="sub">Section 2 — Approve Team Requests</div>
+    <ol start="6">
+      <li><strong>Overtime Request</strong> (<code>/department-head-dashboard/requests/overtime</code>) — Approve or reject OT from their staff.</li>
+      <li><strong>Leave Request</strong> (<code>/department-head-dashboard/requests/leave</code>) — Approve or reject leave. Cash advances typically escalate directly to Admin.</li>
+    </ol>
+
+    <div class="sub">Section 3 — Their Own Requests</div>
+    <ol start="8">
+      <li><strong>My Overtime</strong> (<code>/department-head-dashboard/my-requests/overtime</code>) — Submit their own OT.</li>
+      <li><strong>My Cash Advance</strong> (<code>/department-head-dashboard/my-requests/cash-advance</code>) — Submit CA.</li>
+      <li><strong>My Leave</strong> (<code>/department-head-dashboard/my-requests/leave</code>) — Submit leave with attachment.</li>
+    </ol>
+
+    <p>Department Heads can also access <code>/schedules</code> to plan shifts for upcoming months (allowed by middleware).</p>
+  </section>
+
+  <section>
+    <h3 class="section-title">STEP 5 — EMPLOYEE Flow</h3>
+    <p class="intro">After login as Employee, the sidebar shows 6 items. Employees do <strong>not</strong> time in/out from their own dashboard — they walk up to the shared kiosk device.</p>
+    <ol>
+      <li><strong>Dashboard</strong> (<code>/employee-dashboard</code>) — Personal stats and upcoming schedule.</li>
+      <li><strong>My Attendance</strong> (<code>/employee-dashboard/my-attendance</code>) — DTR-style view of past time-in/out, late, OT, calendar view.</li>
+      <li><strong>My Payslip</strong> (<code>/employee-dashboard/my-payslip</code>) — Semi-monthly payslip. Base = Monthly Salary ÷ 2, auto-adjusted for late/absent/OT. Download as PDF.</li>
+      <li><strong>Overtime</strong> (<code>/employee-dashboard/overtime</code>) — Apply for OT, routed to Department Head.</li>
+      <li><strong>Cash Advance</strong> (<code>/employee-dashboard/cash-advance</code>) — Apply for CA, routed to Admin.</li>
+      <li><strong>Leave</strong> (<code>/employee-dashboard/leave</code>) — Apply for leave with letter/proof attachment.</li>
+    </ol>
+
+    <div class="sub">Punching Attendance (kiosk)</div>
+    <ul>
+      <li>Employees go to a shared kiosk device (tablet/PC at the resort entrance) which opens <code>/attendance</code>.</li>
+      <li>Kiosk endpoints (<code>/api/attendance/qr-scan</code> and <code>/api/attendance/enrolled-faces</code>) are public — no login required.</li>
+      <li>The face-attendance component matches their face against the enrolled photos and logs Time In or Time Out automatically.</li>
+    </ul>
+  </section>
+
+  <section>
+    <h3 class="section-title">STEP 6 — End-of-Day / End-of-Period</h3>
+    <ol>
+      <li>Admin reviews <code>/attendance</code> for any missing punches and corrects them.</li>
+      <li>Department Heads clear pending requests in their queue.</li>
+      <li>Admin generates payroll in <code>/payroll</code> at the end of each semi-monthly cycle.</li>
+      <li>Employees download their payslip from <code>/employee-dashboard/my-payslip</code>.</li>
+      <li>Everyone uses the avatar menu (top-right) → <strong>Sign out</strong> to end the session.</li>
+    </ol>
+  </section>
+
+  <section>
+    <h3 class="section-title">Full Navigation Map (Summary)</h3>
+    <pre class="flow">START
+  └─ /auth/signin
+       │
+       ├── ADMIN ──────────► /  (Dashboard)
+       │     └─ Employees → Departments → Position Salaries
+       │     └─ Schedules → Holidays → Benefits → CA Settings
+       │     └─ Attendance (kiosk + admin)
+       │     └─ Requests (approve)
+       │     └─ Payroll (generate → export PDF)
+       │     └─ Analytics
+       │
+       ├── DEPT HEAD ──────► /department-head-dashboard
+       │     └─ Department Attendance / Payroll
+       │     └─ My DTR / My Payslip
+       │     └─ Requests (Overtime / Leave) → approve team
+       │     └─ My Requests (OT / CA / Leave) → submit
+       │     └─ /schedules (plan next month)
+       │
+       └── EMPLOYEE ───────► /employee-dashboard
+             └─ My Attendance
+             └─ My Payslip
+             └─ Overtime / Cash Advance / Leave (submit)
+             └─ (face-scan at the kiosk → /attendance)
+END → Sign out (avatar menu)</pre>
+  </section>
+
+  <footer class="foot">
+    Developed by Dennis Bejarasco — Payroll Management System Specialist.<br/>
+    Glan White Sand Beach Resort • Web-based Payroll Management System
+  </footer>
+</div>
+
+<script>
+  (function () {
+    var el = document.getElementById('generated-meta');
+    if (el) {
+      var d = new Date();
+      el.textContent = 'Generated: ' + d.toLocaleString();
+    }
+  })();
+</script>
+</body>
+</html>
