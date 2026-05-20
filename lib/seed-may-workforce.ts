@@ -98,10 +98,18 @@ export async function seedStandardBenefits() {
 
 export async function assignBenefitsToEmployees(options?: {
   excludeEmployeeNumbers?: string[]
+  onlyEmployeeNumbers?: string[]
 }) {
   const exclude = new Set(options?.excludeEmployeeNumbers ?? [])
+  const only = options?.onlyEmployeeNumbers?.length
+    ? new Set(options.onlyEmployeeNumbers)
+    : null
+
   const employees = await prisma.employee.findMany({
-    where: { isActive: true },
+    where: {
+      isActive: true,
+      ...(only ? { employeeId: { in: [...only] } } : {}),
+    },
     select: { id: true, employeeId: true, firstName: true, lastName: true },
   })
 
@@ -150,19 +158,53 @@ export async function assignBenefitsToEmployees(options?: {
   console.log(`  Employees covered: ${employees.filter((e) => !exclude.has(e.employeeId)).length}`)
 }
 
+export async function getOrCreateITDepartmentSchedule() {
+  let schedule = await prisma.schedule.findFirst({
+    where: { name: "IT Department Schedule" },
+  })
+  if (!schedule) {
+    schedule = await prisma.schedule.findFirst({
+      where: { timeIn: SCHEDULE_TIME_IN, timeOut: SCHEDULE_TIME_OUT },
+    })
+  }
+  if (!schedule) {
+    schedule = await prisma.schedule.create({
+      data: {
+        name: "IT Department Schedule",
+        timeIn: SCHEDULE_TIME_IN,
+        timeOut: SCHEDULE_TIME_OUT,
+        workingDays: "MONDAY,TUESDAY,WEDNESDAY,THURSDAY,FRIDAY",
+      },
+    })
+  }
+  return schedule
+}
+
 export async function seedMayAttendanceForEmployees(options?: {
   excludeEmployeeNumbers?: string[]
+  onlyEmployeeNumbers?: string[]
   notes?: string
+  scheduleId?: string
 }) {
-  const exclude = new Set(options?.excludeEmployeeNumbers ?? EXCLUDE_ATTENDANCE_EMPLOYEE_IDS)
-  const schedule = await getOrCreateDayShiftSchedule()
+  const exclude = new Set(options?.excludeEmployeeNumbers ?? [])
+  const only = options?.onlyEmployeeNumbers?.length
+    ? new Set(options.onlyEmployeeNumbers)
+    : null
+  const schedule = options?.scheduleId
+    ? await prisma.schedule.findUniqueOrThrow({ where: { id: options.scheduleId } })
+    : await getOrCreateDayShiftSchedule()
 
   const employees = await prisma.employee.findMany({
-    where: { isActive: true },
+    where: {
+      isActive: true,
+      ...(only ? { employeeId: { in: [...only] } } : {}),
+    },
     select: { id: true, employeeId: true, scheduleId: true },
   })
 
-  const targets = employees.filter((e) => !exclude.has(e.employeeId))
+  const targets = employees.filter(
+    (e) => !exclude.has(e.employeeId) && (!only || only.has(e.employeeId)),
+  )
   if (targets.length === 0) {
     console.log("No employees to seed attendance for.")
     return { created: 0, skipped: 0, employees: 0 }
