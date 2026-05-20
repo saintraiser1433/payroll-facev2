@@ -563,8 +563,10 @@ export async function seedDatabase() {
       }
     })
 
-    // Create payroll items for each employee
+    // Create payroll items for each employee (skip system administrator)
     for (const employee of employees) {
+      if (employee.employeeId === "ADMIN001") continue
+
       const basicPay = employee.salaryGrade?.salaryRate || 25000 // Default salary
       const sssDeduction = basicPay * 0.045 // 4.5%
       const philhealthDeduction = basicPay * 0.0275 // 2.75%

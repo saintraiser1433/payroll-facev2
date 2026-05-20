@@ -7,6 +7,7 @@ import { calculatePhilippineTax } from '@/lib/philippine-tax'
 import { creditedOvertimeMinutesForDay } from '@/lib/payroll-overtime'
 import { getOrCreateDeductionType } from '@/lib/payroll-deduction-types'
 import { getMonthlyAbsenceAccrualWindow } from '@/lib/payroll-accrual'
+import { PAYROLL_EXCLUDED_EMPLOYEE_NUMBERS, payrollEligibleEmployeeWhere } from '@/lib/payroll-excluded-employees'
 import { getWorkDaysInPeriod } from '@/lib/payroll-work-days'
 
 const calculatePayrollSchema = z.object({
@@ -47,8 +48,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Get employees to calculate payroll for
-    const whereClause: any = { isActive: true }
+    // Remove payroll rows for excluded accounts (e.g. system administrator ADMIN001)
+    await prisma.payrollItem.deleteMany({
+      where: {
+        payrollPeriodId,
+        employee: { employeeId: { in: [...PAYROLL_EXCLUDED_EMPLOYEE_NUMBERS] } },
+      },
+    })
+
+    // Get employees to calculate payroll for (active, not system/admin-only accounts)
+    const whereClause: Record<string, unknown> = payrollEligibleEmployeeWhere({ isActive: true })
     if (employeeIds && employeeIds.length > 0) {
       whereClause.id = { in: employeeIds }
     }
