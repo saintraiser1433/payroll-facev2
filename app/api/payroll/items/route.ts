@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { buildEmployeePayrollFilter } from '@/lib/prisma-search'
 
 // GET /api/payroll/items - Get payroll items
 export async function GET(request: NextRequest) {
@@ -37,15 +38,9 @@ export async function GET(request: NextRequest) {
       where.employeeId = employeeId
     }
 
-    if (search) {
-      where.employee = {
-        OR: [
-          { firstName: { contains: search, mode: 'insensitive' } },
-          { lastName: { contains: search, mode: 'insensitive' } },
-          { employeeId: { contains: search, mode: 'insensitive' } },
-          { position: { contains: search, mode: 'insensitive' } },
-        ]
-      }
+    const employeeFilter = buildEmployeePayrollFilter({ search, department, position })
+    if (employeeFilter) {
+      where.employee = employeeFilter
     }
 
     // Status filter
@@ -53,22 +48,6 @@ export async function GET(request: NextRequest) {
       where.payrollPeriod = {
         ...where.payrollPeriod,
         status: status
-      }
-    }
-
-    // Department filter
-    if (department && department !== 'all') {
-      where.employee = {
-        ...where.employee,
-        departmentId: department
-      }
-    }
-
-    // Position filter
-    if (position && position !== 'all') {
-      where.employee = {
-        ...where.employee,
-        position: position
       }
     }
 

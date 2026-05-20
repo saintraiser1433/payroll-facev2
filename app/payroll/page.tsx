@@ -278,6 +278,12 @@ export default function PayrollPage() {
     }
   }, [selectedPeriod, itemsPagination.page, itemsPagination.limit, searchTerm, filters, isAdmin])
 
+  // Reset to page 1 when search or filters change (avoids empty page when results shrink)
+  useEffect(() => {
+    if (!isAdmin) return
+    setItemsPagination((prev) => (prev.page === 1 ? prev : { ...prev, page: 1 }))
+  }, [searchTerm, filters, selectedPeriod, isAdmin])
+
   useEffect(() => {
     if (!isAdmin || selectedPeriod === "all" || !selectedPeriod) {
       lastAutoRecalcPeriodRef.current = null
@@ -1624,7 +1630,10 @@ export default function PayrollPage() {
                     <Input
                       placeholder="Search employees, ID, or position..."
                       value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
+                      onChange={(e) => {
+                        setSearchTerm(e.target.value)
+                        setItemsPagination((prev) => ({ ...prev, page: 1 }))
+                      }}
                       className="pl-10"
                     />
                   </div>
